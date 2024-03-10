@@ -127,11 +127,12 @@ TrendlineEstimatorSettings::TrendlineEstimatorSettings(
           "Enabled")) {
     window_size = ReadTrendlineFilterWindowSize(key_value_config);
   }
-  Parser()->Parse(key_value_config->Lookup(TrendlineEstimatorSettings::kKey));
-  if (window_size < 10 || 200 < window_size) {
-    RTC_LOG(LS_WARNING) << "Window size must be between 10 and 200 packets";
-    window_size = kDefaultTrendlineWindowSize;
-  }
+  // window_size = 5; //CHANGEPOINT 
+  // Parser()->Parse(key_value_config->Lookup(TrendlineEstimatorSettings::kKey));
+  // if (window_size < 10 || 200 < window_size) {
+  //   RTC_LOG(LS_WARNING) << "Window size must be between 10 and 200 packets";
+  //   window_size = kDefaultTrendlineWindowSize;
+  // }
   if (enable_cap) {
     if (beginning_packets < 1 || end_packets < 1 ||
         beginning_packets > window_size || end_packets > window_size) {
@@ -229,12 +230,24 @@ void TrendlineEstimator::UpdateTrendline(double recv_delta_ms,
       std::swap(delay_hist_[i], delay_hist_[i - 1]);
     }
   }
-  if (delay_hist_.size() > settings_.window_size)
+  // RTC_LOG(LS_INFO) << "Window size " << settings_.window_size;
+  double first_arrival_time = delay_hist_.front().arrival_time_ms;
+  double last_arrival_time = delay_hist_.back().arrival_time_ms;
+  double duration = last_arrival_time - first_arrival_time;
+  // if (delay_hist_.size() > settings_.window_size)
+  //   delay_hist_.pop_front();
+  int MaxDuration = 100;
+  bool dofit = false;
+  while (duration > MaxDuration && delay_hist_.size() > 2){
+    dofit = true;
     delay_hist_.pop_front();
-
+    first_arrival_time = delay_hist_.front().arrival_time_ms;
+    last_arrival_time = delay_hist_.back().arrival_time_ms;
+    duration = last_arrival_time - first_arrival_time;
+  }
   // Simple linear regression.
   double trend = prev_trend_;
-  if (delay_hist_.size() == settings_.window_size) {
+  if (dofit) {
     // Update trend_ if it is possible to fit a line to the data. The delay
     // trend can be seen as an estimate of (send_rate - capacity)/capacity.
     // 0 < trend < 1   ->  the delay increases, queues are filling up
