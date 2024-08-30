@@ -1072,7 +1072,8 @@ void RtpVideoStreamReceiver2::ManageFrame(
 
 void RtpVideoStreamReceiver2::ReceivePacket(const RtpPacketReceived& packet) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
-
+  RTC_LOG(LS_VERBOSE) << "sendtime recvtime " << packet.Timestamp() << " "
+                      << clock_->CurrentTime().ms();
   if (packet.payload_size() == 0) {
     // Padding or keep-alive packet.
     // TODO(nisse): Could drop empty packets earlier, but need to figure out how

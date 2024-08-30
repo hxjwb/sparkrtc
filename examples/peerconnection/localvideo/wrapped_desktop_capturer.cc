@@ -62,25 +62,33 @@ void WrappedDesktopCapturer::StartCapture() {
   // Start new thread to capture
   capture_thread_.reset(new std::thread([this]() {
     // dc_->Start(this);
-
+  // int loop = 0;
     while (start_flag_) {
       // dc_->CaptureFrame();
       std::this_thread::sleep_for(std::chrono::milliseconds(1000 / fps_));
       int total_frame = video_d->number_of_frames();
-
-      if (frame_count_ >= total_frame) {
-        frame_count_ = 0;
+RTC_LOG(LS_INFO) << "Total frame: " << total_frame;
+      if (frame_count_ >= total_frame ) {
+        // if (loop < 2) frame_count_ = 0;
+        // else{
+          RTC_LOG(LS_INFO) << "BYE!";
+          // kill the process
+          exit(0);
+        // }
+        // loop++;
       }
       rtc::scoped_refptr<webrtc::I420BufferInterface> frame_buffer = video_d->GetFrame(frame_count_++);
+
+      int64_t now = rtc::TimeMillis();
       webrtc::VideoFrame captureFrame =
         webrtc::VideoFrame::Builder()
         .set_video_frame_buffer(frame_buffer)
         .set_timestamp_rtp(0)//set_ntp_time_ms
-              .set_ntp_time_ms(rtc::TimeMillis())
-        .set_timestamp_ms(rtc::TimeMillis())
+              .set_ntp_time_ms(now)
+        .set_timestamp_ms(now)
         .set_rotation(webrtc::kVideoRotation_0)
         .build();
-      RTC_LOG(LS_INFO) << "Sending " << frame_count_ << " " << rtc::TimeMillis();
+      RTC_LOG(LS_INFO) << "Sending " << frame_count_ << " " << now;
     // captureFrame.set_ntp_time_ms(0);
       TestDesktopCapturer::OnFrame(captureFrame);
     }

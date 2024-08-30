@@ -143,6 +143,15 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
                              std::move(network_estimate),
                              recovered_from_overuse, in_alr, msg.feedback_time);
 }
+int current_burst_send_time_ms = 0;
+int current_burst_first_recv_time_ms = 0;
+int current_burst_last_recv_time_ms = 0;
+
+int current_burst_packet_counter = 0;
+int current_burst_size = 0;
+
+double smoothed_burst_capacity = 0;
+
 
 void DelayBasedBwe::IncomingPacketFeedback(const PacketResult& packet_feedback,
                                            Timestamp at_time) {
@@ -195,6 +204,60 @@ void DelayBasedBwe::IncomingPacketFeedback(const PacketResult& packet_feedback,
   bool calculated_deltas = inter_arrival_for_packet->ComputeDeltas(
       packet_feedback.sent_packet.send_time, packet_feedback.receive_time,
       at_time, packet_size.bytes(), &send_delta, &recv_delta, &size_delta);
+
+  int send_time_ms = packet_feedback.sent_packet.send_time.ms();
+  int recv_time_ms = packet_feedback.receive_time.ms();
+  int packet_size_bytes = packet_size.bytes();
+
+  // RTC_LOG(LS_INFO) << "send_time_ms: " << send_time_ms << " recv_time_ms: " << recv_time_ms << " packet_size: " << packet_size_bytes;
+  if (current_burst_send_time_ms == 0) {  // Initialize
+    current_burst_first_recv_time_ms = recv_time_ms;
+  } 
+  else if (send_time_ms != current_burst_send_time_ms) {  // Update Capacity Estimation
+    int burst_duration_ms = current_burst_last_recv_time_ms - current_burst_first_recv_time_ms;
+    int burst_size = current_burst_size;
+
+    RTC_LOG(LS_INFO) << "Burst Duration: " << burst_duration_ms << " ms" << " Burst Size: " << burst_size << " bytes";
+    // RTC_LOG(LS_INFO) << "Burst count: " << current_burst_packet_counter;
+
+    if (burst_duration_ms >= 4 && burst_size > 0 && current_burst_packet_counter > 0) { 
+      double burst_capacity = 1000 * (burst_size * 8) / burst_duration_ms;
+      int capacity_bps = static_cast<int>(burst_capacity);
+
+      RTC_LOG(LS_INFO) << "Burst Capacity: " << capacity_bps << " bps";
+      if (smoothed_burst_capacity == 0) {
+        smoothed_burst_capacity = capacity_bps;
+      }
+      else {
+        smoothed_burst_capacity = smoothed_burst_capacity * 0.9 + capacity_bps * 0.1;
+      }
+
+      // RTC_LOG(LS_INFO) << "Smoothed Burst Capacity: " << smoothed_burst_capacity << " bps";
+
+      // action_burst_capacity = capacity_bps;
+    }
+    
+
+    current_burst_packet_counter = 0;
+    current_burst_size = 0;
+    current_burst_first_recv_time_ms = recv_time_ms;
+
+
+  }
+  else{
+    current_burst_packet_counter++;
+    current_burst_size += packet_size_bytes;
+  }
+
+  current_burst_send_time_ms = send_time_ms;
+  current_burst_last_recv_time_ms = recv_time_ms;
+
+  // RTC_LOG(LS_VERBOSE) << "DelayBasedBwe::IncomingPacketFeedback "
+  //                     << "send_time_ms: " << packet_feedback.sent_packet.send_time.ms()
+  //                     << " recv_time_ms: " << packet_feedback.receive_time.ms()
+  //                     << " packet_size: " << size;
+                      
+                      
 
   delay_detector_for_packet->Update(recv_delta.ms<double>(),
                                     send_delta.ms<double>(),

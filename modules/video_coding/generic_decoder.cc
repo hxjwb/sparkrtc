@@ -113,6 +113,9 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   // TODO(holmer): We should improve this so that we can handle multiple
   // callbacks from one call to Decode().
   int64_t decoded_time = rtc::TimeMillis();
+  // Get Unix timestamp
+  
+  
 
   RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|md5 " << frame_size << " " << before_decode_time << " " << decoded_time << " " << *md5_str;
 

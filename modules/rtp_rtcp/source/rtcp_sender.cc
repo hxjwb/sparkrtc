@@ -54,7 +54,7 @@ namespace {
 const uint32_t kRtcpAnyExtendedReports = kRtcpXrReceiverReferenceTime |
                                          kRtcpXrDlrrReportBlock |
                                          kRtcpXrTargetBitrate;
-constexpr int32_t kDefaultVideoReportInterval = 1000;
+constexpr int32_t kDefaultVideoReportInterval = 30;
 constexpr int32_t kDefaultAudioReportInterval = 5000;
 }  // namespace
 
@@ -149,7 +149,7 @@ RTCPSender::RTCPSender(Configuration config)
       report_interval_(config.rtcp_report_interval.value_or(
           TimeDelta::Millis(config.audio ? kDefaultAudioReportInterval
                                          : kDefaultVideoReportInterval))),
-      schedule_next_rtcp_send_evaluation_function_(
+            schedule_next_rtcp_send_evaluation_function_(
           std::move(config.schedule_next_rtcp_send_evaluation_function)),
       sending_(false),
       timestamp_offset_(0),
@@ -170,6 +170,8 @@ RTCPSender::RTCPSender(Configuration config)
       packet_type_counter_observer_(config.rtcp_packet_type_counter_observer),
       send_video_bitrate_allocation_(false),
       last_payload_type_(-1) {
+  RTC_LOG(LS_INFO) << "Created report interval "
+                   << report_interval_.ms() << " ms.";
   RTC_DCHECK(transport_ != nullptr);
 
   builders_[kRtcpSr] = &RTCPSender::BuildSR;
@@ -200,6 +202,7 @@ void RTCPSender::SetRTCPStatus(RtcpMode new_method) {
     next_time_to_send_rtcp_ = absl::nullopt;
   } else if (method_ == RtcpMode::kOff) {
     // When switching on, reschedule the next packet
+    RTC_LOG(LS_VERBOSE) << "report_interval_ " << report_interval_;
     SetNextRtcpSendEvaluationDuration(report_interval_ / 2);
   }
   method_ = new_method;
@@ -348,8 +351,9 @@ int32_t RTCPSender::SetCNAME(absl::string_view c_name) {
 
 bool RTCPSender::TimeToSendRTCPReport(bool send_keyframe_before_rtp) const {
   Timestamp now = clock_->CurrentTime();
-
+ 
   MutexLock lock(&mutex_rtcp_sender_);
+  // RTC_LOG(LS_VERBOSE) << "next_time_to_send_rtcp_ " << *next_time_to_send_rtcp_;
   RTC_DCHECK(
       (method_ == RtcpMode::kOff && !next_time_to_send_rtcp_.has_value()) ||
       (method_ != RtcpMode::kOff && next_time_to_send_rtcp_.has_value()));
@@ -392,6 +396,10 @@ void RTCPSender::BuildSR(const RtcpContext& ctx, PacketSender& sender) {
   report.SetPacketCount(ctx.feedback_state_.packets_sent);
   report.SetOctetCount(ctx.feedback_state_.media_bytes_sent);
   report.SetReportBlocks(CreateReportBlocks(ctx.feedback_state_));
+  RTC_LOG(LS_VERBOSE) << "Sending SR for ssrc: " << ssrc_
+                      << " with NTP: " << report.ntp().ToMs();
+  
+  sender.AppendPacket(report);
   sender.AppendPacket(report);
 }
 
@@ -409,6 +417,7 @@ void RTCPSender::BuildRR(const RtcpContext& ctx, PacketSender& sender) {
   report.SetSenderSsrc(ssrc_);
   report.SetReportBlocks(CreateReportBlocks(ctx.feedback_state_));
   if (method_ == RtcpMode::kCompound || !report.report_blocks().empty()) {
+    RTC_LOG(LS_VERBOSE) << "Sending RR for ssrc: " << ssrc_;
     sender.AppendPacket(report);
   }
 }

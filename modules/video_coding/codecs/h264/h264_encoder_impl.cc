@@ -13,7 +13,10 @@
 // build with H264 support, please do not move anything out of the
 // #ifdef unless needed and tested.
 // #ifdef WEBRTC_USE_H264
-
+#define PRESET 1
+#define VBV 1
+#define CBR 0
+#define ACTION 0
 #include "modules/video_coding/codecs/h264/h264_encoder_impl.h"
 
 #include <algorithm>
@@ -49,6 +52,7 @@ namespace {
 static const int kLowH264QpThreshold = 24;
 static const int kHighH264QpThreshold = 37;
 
+int current_bitrate_kbps = 0;
 // Used by histograms. Values of entries should not be changed.
 enum H264EncoderImplEvent {
   kH264EncoderEventInit = 0,
@@ -182,10 +186,10 @@ static void RtpFragmentize(EncodedImage* encoded_image, x264_nal_t *nal_t_, int 
       // Because the sum of all layer lengths, `required_capacity`, fits in a
       // `size_t`, we know that any indices in-between will not overflow.
       // log the first 4 bytes of the NAL
-      RTC_LOG(LS_INFO) << "BYTES " << nal_t_[nal_index].p_payload[0] << " "
-                       << nal_t_[nal_index].p_payload[1] << " "
-                       << nal_t_[nal_index].p_payload[2] << " "
-                       << nal_t_[nal_index].p_payload[3];
+      // RTC_LOG(LS_INFO) << "BYTES " << nal_t_[nal_index].p_payload[0] << " "
+                       //                  << nal_t_[nal_index].p_payload[1] << " "
+                       //                  << nal_t_[nal_index].p_payload[2] << " "
+                       //                  << nal_t_[nal_index].p_payload[3];
       RTC_DCHECK_GE(nal_t_[nal_index].i_payload, 4);
       RTC_DCHECK_EQ(nal_t_[nal_index].p_payload[0], start_code[0]);
       // RTC_DCHECK_EQ(nal_t_[nal_index].p_payload[1], start_code[1]);
@@ -287,7 +291,35 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   
   memset(&param_, 0, sizeof(param_));
   x264_param_default(&param_);
-  int ret_val = x264_param_default_preset(&param_, "ultrafast", "zerolatency");
+  int ret_val;
+  int preset = PRESET;
+  switch (preset) {
+    case 0:
+      ret_val = x264_param_default_preset(&param_, "ultrafast", "zerolatency");
+break;
+    case 1:
+      ret_val = x264_param_default_preset(&param_, "superfast", "zerolatency");
+      break;
+    case 2:
+      ret_val = x264_param_default_preset(&param_, "veryfast", "zerolatency");
+      break;
+    case 3:
+      ret_val = x264_param_default_preset(&param_, "faster", "zerolatency");
+      break;
+    case 4:
+      ret_val = x264_param_default_preset(&param_, "fast", "zerolatency");
+      break;
+    case 5:
+      ret_val = x264_param_default_preset(&param_, "medium", "zerolatency");
+      break;
+    case 6:
+      ret_val = x264_param_default_preset(&param_, "slow", "zerolatency"); 
+      break;
+    case 7:
+      ret_val = x264_param_default_preset(&param_, "slower", "zerolatency");
+      break;
+  }
+
   if (ret_val != 0) {
     RTC_LOG(LS_ERROR)
         << "H264EncoderImpl::InitEncode() fails to initialize encoder ret_val "
@@ -301,17 +333,36 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   int bitrate_kbps = 3000;
   RTC_LOG(LS_INFO) << "LOG bitrate_kbps " << bitrate_kbps;
 
-  param_.i_threads = 1;
+  param_.i_threads = 8;
+  param_.b_sliced_threads = 1;
+
   param_.i_width = inst->width;
   param_.i_height = inst->height;
   param_.i_frame_total = 0;  
   param_.i_keyint_max = 1500;
+  
+  // CBR
+#if CBR 
   param_.rc.i_rc_method = X264_RC_ABR;
+  param_.rc.b_filler = 1;
+#else
+  // CQP
+  // param_.rc.i_rc_method = X264_RC_CQP;
+  // param_.rc.i_qp_constant = 35;
+  
 
+  // CRF
+  param_.rc.i_rc_method = X264_RC_ABR;
+  // param_.rc.f_rf_constant = 18;
+
+#endif
+
+  // Init VBV
+  param_.rc.i_bitrate = bitrate_kbps;
   param_.rc.i_vbv_max_bitrate = bitrate_kbps; //
 
   // param_.rc.i_vbv_buffer_size = bitrate_kbps / 30;  // kbit  bitrate / framerate = average framesize
-  param_.rc.i_vbv_buffer_size = bitrate_kbps;
+  param_.rc.i_vbv_buffer_size = bitrate_kbps / 30;
   // param_.i_bframe = 0;
   // param_.b_open_gop = 0;
   // param_.i_bframe_pyramid = 0;
@@ -319,7 +370,7 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
 
   param_.i_log_level = X264_LOG_DEBUG;
   param_.i_fps_den = 1;
-  param_.i_fps_num = 25;
+  param_.i_fps_num = 30;
 
   param_.b_annexb = 1;  // for start code 0,0,0,1
   param_.i_csp = X264_CSP_I420;
@@ -328,10 +379,9 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   param_.b_repeat_headers = 1;  // sps, pps
 
 
-  param_.rc.i_bitrate = bitrate_kbps;
   param_.b_cabac = 1;  // 0 for CAVLC， 1 for higher complexity
   /* Apply profile restrictions. */
-  ret_val = x264_param_apply_profile(&param_, "main");
+  ret_val = x264_param_apply_profile(&param_, "High");
   if (ret_val != 0) {
     // WEBRTC_TRACE(
     //     webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
@@ -497,6 +547,7 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
 
   codec_.maxFramerate = static_cast<uint32_t>(parameters.framerate_fps);
 
+
   //   size_t stream_idx = encoders_.size() - 1;
   for (size_t i = 0; i < 1; ++i) {
     // Update layer config.
@@ -509,14 +560,38 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
     if (configurations_[i].target_bps) {
 
       int bitrate_kbps = configurations_[i].target_bps / 1000;
-      RTC_LOG(LS_INFO) << "SetRates, stream " << i << " target_bitrate "
-                       << bitrate_kbps << " framerate "
-                       << parameters.framerate_fps;
+
+      //debug set bitrate_kbps to 5000
+      // bitrate_kbps = 5000; // fix
+      int fps = parameters.framerate_fps;
+      RTC_LOG(LS_INFO) << "SetRates,kbps,fps " << bitrate_kbps << " "
+                       << fps;
       configurations_[i].SetStreamState(true);
-      param_.rc.i_bitrate = bitrate_kbps;
-      param_.i_fps_num = static_cast<int>(parameters.framerate_fps);
+      
+      // param_.i_fps_num = static_cast<int>(parameters.framerate_fps);
+      // change fps is useless for libx264. So we need to change the bitrate but assuming that the fps is fixed.
+      
+      double scaling_factor = 30.0 / fps;
+
+      RTC_LOG(LS_INFO) << "LOG scaling_factor " << scaling_factor;
+
+      int scaled_bitrate = bitrate_kbps * scaling_factor;
+      // log new and old bitrate
+      RTC_LOG(LS_INFO) << "Bitrate scaling from " << bitrate_kbps << " to "
+                       << scaled_bitrate;
+
+      // param_.rc.i_bitrate = scaled_bitrate;
+      // param_.rc.i_vbv_max_bitrate = scaled_bitrate;
+      // param_.rc.i_vbv_buffer_size = scaled_bitrate/ 30 * VBV; //ours
+      // bitrate_kbps *= 1.2;
+      current_bitrate_kbps = bitrate_kbps;
+      param_.rc.i_bitrate = bitrate_kbps; //Fixed to 30 fps
       param_.rc.i_vbv_max_bitrate = bitrate_kbps;
-      param_.rc.i_vbv_buffer_size = bitrate_kbps / 30;
+      param_.rc.i_vbv_buffer_size = bitrate_kbps/ 30 * VBV; //ours
+      
+      // param_.rc.i_vbv_buffer_size = bitrate_kbps / param_.i_fps_num; //CBR
+      
+
       x264_encoder_reconfig(encoder_, &param_);
       // Update h264 encoder.
       //   SBitrateInfo target_bitrate;
@@ -532,11 +607,17 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
   }
 }
 
-int tokens = 0;
-int max_token_num = 0;
+#if ACTION
+extern int current_available_token;
+extern int token_bucket_size;
+#endif
 
+uint8_t* lastY = NULL;
 
+int average_diff = 0;
+int count_diff = 0;
 
+int action_counter = 0;
 int32_t H264EncoderImpl::Encode(
     const VideoFrame& input_frame,
     const std::vector<VideoFrameType>* frame_types) {
@@ -553,6 +634,7 @@ int32_t H264EncoderImpl::Encode(
 
   rtc::scoped_refptr<I420BufferInterface> frame_buffer =
       input_frame.video_frame_buffer()->ToI420();
+  
   if (!frame_buffer) {
     RTC_LOG(LS_ERROR) << "Failed to convert "
                       << VideoFrameBufferTypeToString(
@@ -580,9 +662,96 @@ int32_t H264EncoderImpl::Encode(
   pic_.img.i_csp = X264_CSP_I420;
   pic_.img.i_plane = 3;
   pic_.i_type = X264_TYPE_AUTO;
+  
   pic_.img.plane[0] = const_cast<uint8_t*>(frame_buffer->DataY());
   pic_.img.plane[1] = const_cast<uint8_t*>(frame_buffer->DataU());
   pic_.img.plane[2] = const_cast<uint8_t*>(frame_buffer->DataV());
+#if 0
+  uint8_t* thisY = const_cast<uint8_t*>(frame_buffer->DataY());
+  if (lastY != NULL) {
+    // compare the difference between the last frame and the current frame
+    long long int diff = 0;
+    for (int i = 0; i < frame_buffer->height() * frame_buffer->width(); i++) {
+      diff += (thisY[i] - lastY[i]) * (thisY[i] - lastY[i]);
+    }
+    diff = diff / (frame_buffer->height() * frame_buffer->width());
+    count_diff++;
+    double average_diff_double = average_diff;
+    average_diff_double = (average_diff_double * (count_diff - 1) + diff) / count_diff;
+    average_diff = average_diff_double;
+    RTC_LOG(LS_INFO) << "LOG diff: " << diff;
+    RTC_LOG(LS_INFO) << "LOG average_diff: " << average_diff;
+
+    if (diff > 2 * average_diff) {
+      action_counter = 3;
+    }
+    if (action_counter > 0) {
+      // if the difference is too large, we need to set the qp to a higher value
+      // pic_.i_qpplus1 = 34;
+      param_.rc.i_bitrate = current_bitrate_kbps; //Fixed to 30 fps
+      param_.rc.i_vbv_max_bitrate = current_bitrate_kbps;
+      param_.rc.i_vbv_buffer_size = current_bitrate_kbps/ 30 * 3; // limited!
+      // x264_encoder_reconfig(encoder_, &param_);
+      action_counter--;
+    }
+    else {
+      param_.rc.i_vbv_buffer_size = current_bitrate_kbps/ 30 * VBV; // Release!
+      // x264_encoder_reconfig(encoder_, &param_);
+    }
+    if (0) {
+      // pic_.param->analyse.inter = X264_ANALYSE_I4x4 | X264_ANALYSE_I8x8
+      //                    | X264_ANALYSE_PSUB16x16 | X264_ANALYSE_BSUB16x16;
+      
+      // pic_.param->analyse.i_subpel_refine = 7;
+      // pic_.param->i_frame_reference = 3;
+      // pic_.param->analyse.b_mixed_references = 1;
+      // pic_.param->analyse.i_trellis = 1;
+      // pic_.param->rc.b_mb_tree = 1;
+      // pic_.param->analyse.i_weighted_pred = X264_WEIGHTP_SMART;
+      // // pic_.param->rc.i_lookahead = 0;
+      param_.analyse.inter = X264_ANALYSE_I8x8 | X264_ANALYSE_I4x4;
+      param_.analyse.i_me_method = X264_ME_HEX;
+      param_.analyse.i_subpel_refine = 7;
+      param_.i_frame_reference = 3;
+      param_.analyse.b_mixed_references = 1;
+      param_.analyse.i_trellis = 1;
+      param_.rc.b_mb_tree = 1;
+      param_.analyse.i_weighted_pred = X264_WEIGHTP_SMART;
+      // reconfig
+      // x264_encoder_reconfig(encoder_, &param_);
+
+    }else {
+      // pic_.param->analyse.inter = X264_ANALYSE_I8x8|X264_ANALYSE_I4x4;
+        // pic_.param->analyse.i_me_method = X264_ME_DIA;
+        // pic_.param->analyse.i_subpel_refine = 1;
+        // pic_.param->i_frame_reference = 1;
+        // pic_.param->analyse.b_mixed_references = 0;
+        // pic_.param->analyse.i_trellis = 0;
+        // pic_.param->rc.b_mb_tree = 0;
+        // pic_.param->analyse.i_weighted_pred = X264_WEIGHTP_SIMPLE;
+        
+        param_.analyse.inter = X264_ANALYSE_I8x8 | X264_ANALYSE_I4x4;
+        param_.analyse.i_me_method = X264_ME_DIA;
+        param_.analyse.i_subpel_refine = 1;
+        param_.i_frame_reference = 1;
+        param_.analyse.b_mixed_references = 0;
+        param_.analyse.i_trellis = 0;
+        param_.rc.b_mb_tree = 0;
+        param_.analyse.i_weighted_pred = X264_WEIGHTP_SIMPLE;
+
+          // reconfig
+        // x264_encoder_reconfig(encoder_, &param_);
+    
+    }
+  }
+  else {
+    // malloc
+    lastY = (uint8_t*)malloc(frame_buffer->height() * frame_buffer->width());
+  }
+  memcpy(lastY, thisY, frame_buffer->height() * frame_buffer->width());
+  
+
+#endif
 
   // Encode image for each layer.
   for (size_t i = 0; i < 1; ++i) {
@@ -626,8 +795,15 @@ int32_t H264EncoderImpl::Encode(
     // int enc_ret = encoders_[i]->EncodeFrame(&pictures_[i], &info);
     pic_.i_pts++;
     int n_nal = 0;
+// meaure encoding time
+
+    int64_t encode_start_time = rtc::TimeNanos();
     int i_frame_size =
         x264_encoder_encode(encoder_, &nal_t_, &n_nal, &pic_, &pic_out_);
+int64_t encode_end_time = rtc::TimeNanos();
+    int64_t encode_time = encode_end_time - encode_start_time;
+    RTC_LOG(LS_INFO) << "LOG encode_time " << encode_time / 1000000 << "ms";
+
     if (i_frame_size < 0) {
       // WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
       //              "H264EncoderImpl::Encode() fails to encode %d",
@@ -644,7 +820,11 @@ int32_t H264EncoderImpl::Encode(
     }
 
     RtpFragmentize(&encoded_images_[i], nal_t_, n_nal);
-    
+
+    // full bursty bucket
+#if ACTION
+    current_available_token = token_bucket_size;
+#endif
     encoded_images_[i]._encodedWidth = configurations_[i].width;
     encoded_images_[i]._encodedHeight = configurations_[i].height;
     encoded_images_[i].SetRtpTimestamp(input_frame.timestamp());

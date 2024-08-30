@@ -197,7 +197,6 @@ void RtcpTransceiverImpl::ReceivePacket(rtc::ArrayView<const uint8_t> packet,
                                         Timestamp now) {
   // Report blocks may be spread across multiple sender and receiver reports.
   std::vector<ReportBlockData> report_blocks;
-
   while (!packet.empty()) {
     rtcp::CommonHeader rtcp_block;
     if (!rtcp_block.Parse(packet.data(), packet.size()))

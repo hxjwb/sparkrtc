@@ -37,6 +37,7 @@
 
 namespace webrtc {
 
+extern int64_t encoded_time;
 namespace {
 constexpr size_t kMinAudioPaddingLength = 50;
 constexpr size_t kRtpHeaderLength = 12;
@@ -468,9 +469,12 @@ void RTPSender::EnqueuePackets(
 
   RTC_DCHECK(!packets.empty());
   Timestamp now = clock_->CurrentTime();
+if (packets.size() != 0) {
+    RTC_LOG(LS_INFO) << "PacketID " << packets[0]->Timestamp() << " " << encoded_time;
+  
+  }
   for (auto& packet : packets) {
-    RTC_LOG(LS_INFO) << "Packet ID:" << packet->Timestamp();
-    RTC_DCHECK(packet);
+        RTC_DCHECK(packet);
     RTC_CHECK(packet->packet_type().has_value())
         << "Packet type must be set before sending.";
     if (packet->capture_time() <= Timestamp::Zero()) {

@@ -324,7 +324,7 @@ NetworkControlUpdate GoogCcNetworkController::OnStreamsConfig(
   bool pacing_changed = false;
   if (1) {
     // pacing_factor_ = *msg.pacing_factor;
-  pacing_factor_ = 100.0f;
+  pacing_factor_ = 1.0f;
     pacing_changed = true;
   }
   if (msg.min_total_allocated_bitrate &&
@@ -452,7 +452,6 @@ NetworkControlUpdate GoogCcNetworkController::OnTransportPacketsFeedback(
     TimeDelta propagation_rtt = feedback_rtt - min_pending_time;
     max_feedback_rtt = std::max(max_feedback_rtt, feedback_rtt);
     min_propagation_rtt = std::min(min_propagation_rtt, propagation_rtt);
-    //
   }
 
   if (max_feedback_rtt.IsFinite()) {
@@ -641,9 +640,6 @@ void GoogCcNetworkController::MaybeTriggerOnNetworkChanged(
   uint8_t fraction_loss = bandwidth_estimation_->fraction_loss();
   TimeDelta round_trip_time = bandwidth_estimation_->round_trip_time();
   DataRate loss_based_target_rate = bandwidth_estimation_->target_rate();
-
-  // loss_based_target_rate  = DataRate::BitsPerSec( loss_based_target_rate.bps() * 0.8);
-  // loss_based_target_rate  = DataRate::BitsPerSec( 6000000);
   DataRate pushback_target_rate = loss_based_target_rate;
 
   BWE_TEST_LOGGING_PLOT(1, "fraction_loss_%", at_time.ms(),
@@ -717,11 +713,17 @@ void GoogCcNetworkController::MaybeTriggerOnNetworkChanged(
                         << " estimate_bps=" << loss_based_target_rate.bps();
   }
 }
-
+extern int minimum_action;
 PacerConfig GoogCcNetworkController::GetPacingRates(Timestamp at_time) const {
   // Pacing rate is based on target rate before congestion window pushback,
   // because we don't want to build queues in the pacer when pushback occurs.
   DataRate pacing_rate = DataRate::Zero();
+
+  // int real_factor = 1;
+  // if(minimum_action > 40) {
+  //   real_factor = 1;
+  //   RTC_LOG(LS_INFO) << "RTT high set pacing factor to 1 ";
+  // }
   if (pace_at_max_of_bwe_and_lower_link_capacity_ && estimate_) {
     pacing_rate =
         std::max({min_total_allocated_bitrate_, estimate_->link_capacity_lower,

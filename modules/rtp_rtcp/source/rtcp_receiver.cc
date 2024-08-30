@@ -559,9 +559,14 @@ bool RTCPReceiver::HandleReceiverReport(const CommonHeader& rtcp_block,
   return true;
 }
 
+int standingRTT = 0;
+int minimum_action = 0;
+extern double smoothed_burst_capacity;
+int predicted_queue_packets = 0;
 void RTCPReceiver::HandleReportBlock(const ReportBlock& report_block,
                                      PacketInformation* packet_information,
                                      uint32_t remote_ssrc) {
+
   // This will be called once per report block in the RTCP packet.
   // We filter out all report blocks that are not for us.
   // Each packet has max 31 RR blocks.
@@ -613,6 +618,25 @@ void RTCPReceiver::HandleReportBlock(const ReportBlock& report_block,
     }
 
     packet_information->rtt = rtt;
+    RTC_LOG(LS_VERBOSE) << "RTT: " << rtt.ms() << " ms.";
+    int rtt_now = rtt.ms();
+    if (standingRTT == 0) {
+      standingRTT = rtt_now;
+    } else {
+
+      // EWMA
+      standingRTT = (standingRTT * 7 + rtt_now) / 8;
+      RTC_LOG(LS_VERBOSE) << "Standing RTT: " << standingRTT;
+    }
+    minimum_action = standingRTT;
+    
+    double rtt_double = rtt.ms();
+    // RTC_LOG(LS_VERBOSE) << "smoothed_burst_capacity " << smoothed_burst_capacity;
+    double predicted_queue_size = rtt_double / 1000 * smoothed_burst_capacity; //bit
+    // RTC_LOG(LS_VERBOSE) << "Predicted Queue Size: " << predicted_queue_size;
+    predicted_queue_packets = predicted_queue_size / 8 / 1200;
+    RTC_LOG(LS_VERBOSE) << "Predicted Queue Size: " << predicted_queue_packets;
+
   }
 
   packet_information->report_block_datas.push_back(*report_block_data);

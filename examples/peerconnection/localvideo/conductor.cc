@@ -7,7 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+#define CODEC 1
 #include "examples/peerconnection/localvideo/conductor.h"
 
 #include <stddef.h>
@@ -149,16 +149,21 @@ bool Conductor::InitializePeerConnection() {
       webrtc::CreateBuiltinAudioEncoderFactory(),
       webrtc::CreateBuiltinAudioDecoderFactory(),
       std::make_unique<webrtc::VideoEncoderFactoryTemplate<
-          // webrtc::LibvpxVp8EncoderTemplateAdapter
-          // webrtc::LibvpxVp9EncoderTemplateAdapter,
+#if CODEC == 1
+          webrtc::LibvpxVp8EncoderTemplateAdapter
+#elif CODEC == 2
+          webrtc::LibvpxVp9EncoderTemplateAdapter
+#elif CODEC == 3
           webrtc::OpenH264EncoderTemplateAdapter
-          // webrtc::LibaomAv1EncoderTemplateAdapter
+#elif CODEC == 4
+          webrtc::LibaomAv1EncoderTemplateAdapter
+#endif
           >>(),
       std::make_unique<webrtc::VideoDecoderFactoryTemplate<
-          // webrtc::LibvpxVp8DecoderTemplateAdapter
-          // webrtc::LibvpxVp9DecoderTemplateAdapter,
-          webrtc::OpenH264DecoderTemplateAdapter
-          // webrtc::Dav1dDecoderTemplateAdapter
+          webrtc::LibvpxVp8DecoderTemplateAdapter,
+          webrtc::LibvpxVp9DecoderTemplateAdapter,
+          webrtc::OpenH264DecoderTemplateAdapter,
+          webrtc::Dav1dDecoderTemplateAdapter
           >>(),
       nullptr /* audio_mixer */, nullptr /* audio_processing */);
 

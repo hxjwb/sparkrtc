@@ -61,7 +61,7 @@
 
 #define AV1_ENCODING 0
 namespace webrtc {
-
+int64_t encoded_time;
 namespace {
 
 // Time interval for logging frame counts.
@@ -87,7 +87,7 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 int64_t captured_time;
-int64_t encoded_time;
+
 
 int GetNumSpatialLayers(const VideoCodec& codec) {
   if (codec.codecType == kVideoCodecVP9) {
@@ -1371,7 +1371,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   force_disable_frame_dropper_ =
       field_trials_.IsDisabled(kFrameDropperFieldTrial) ||
       (num_layers > 1 && codec.mode == VideoCodecMode::kScreensharing);
-  force_disable_frame_dropper_ = true;
+  // force_disable_frame_dropper_ = true;
 
   const VideoEncoder::EncoderInfo info = encoder_->GetEncoderInfo();
   if (rate_control_settings_.UseEncoderBitrateAdjuster()) {
@@ -1888,9 +1888,9 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   frame_dropper_.Leak(framerate_fps);
   // Frame dropping is enabled iff frame dropping is not force-disabled, and
   // rate controller is not trusted.
-  const bool frame_dropping_enabled = false;
-      // !force_disable_frame_dropper_ &&
-      // !encoder_info_.has_trusted_rate_controller;
+  const bool frame_dropping_enabled = 
+      !force_disable_frame_dropper_ &&
+      !encoder_info_.has_trusted_rate_controller;
 
   frame_dropper_.Enable(frame_dropping_enabled);
   if (frame_dropping_enabled && frame_dropper_.DropFrame()) {
@@ -2176,6 +2176,7 @@ std::string get_md5_from_encoded_image(const EncodedImage& encoded_image) {
   std::string md5_(md5string);
   return md5_;
 }
+
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
@@ -2183,7 +2184,7 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
                        "timestamp", encoded_image.RtpTimestamp());
 
   
-  encoded_time = rtc::TimeMillis();
+  encoded_time = rtc::TimeUTCMicros();
   std::string md5_str = get_md5_from_encoded_image(encoded_image);
 
 #if AV1_ENCODING
@@ -2191,7 +2192,7 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
 #else
   int f_size = encoded_image.size();
 #endif
-  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << captured_time << " " << encoded_time << " " << md5_str;
+  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << encoded_time << " " << encoded_time << " " << md5_str;
 
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info
