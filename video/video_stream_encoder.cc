@@ -2056,7 +2056,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   frame_encode_metadata_writer_.OnEncodeStarted(out_frame);
 
-  captured_time = out_frame.ntp_time_ms();
+  captured_time = rtc::TimeUTCMicros();
 
   const int32_t encode_status = encoder_->Encode(out_frame, &next_frame_types_);
   was_encode_called_since_last_initialization_ = true;
@@ -2192,7 +2192,7 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
 #else
   int f_size = encoded_image.size();
 #endif
-  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << encoded_time << " " << encoded_time << " " << md5_str;
+  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << captured_time << " " << encoded_time << " " << md5_str;
 
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info
