@@ -7,7 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+#define FACTOR 1.0f
 #include "video/video_stream_encoder.h"
 
 #include <algorithm>
@@ -57,8 +57,11 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 
-namespace webrtc {
+#include <openssl/md5.h>
 
+#define AV1_ENCODING 0
+namespace webrtc {
+int64_t encoded_time;
 namespace {
 
 // Time interval for logging frame counts.
@@ -82,6 +85,9 @@ const int64_t kParameterUpdateIntervalMs = 1000;
 constexpr int kMaxAnimationPixels = 1280 * 720;
 
 constexpr int kDefaultMinScreenSharebps = 1200000;
+
+int64_t captured_time;
+
 
 int GetNumSpatialLayers(const VideoCodec& codec) {
   if (codec.codecType == kVideoCodecVP9) {
@@ -1558,7 +1564,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
   CheckForAnimatedContent(incoming_frame, post_time.us());
   bool cwnd_frame_drop =
       cwnd_frame_drop_interval_ &&
-      (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
+      (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0); 
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
   } else {
@@ -1865,7 +1871,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   frame_dropper_.Leak(framerate_fps);
   // Frame dropping is enabled iff frame dropping is not force-disabled, and
   // rate controller is not trusted.
-  const bool frame_dropping_enabled =
+  const bool frame_dropping_enabled = 
       !force_disable_frame_dropper_ &&
       !encoder_info_.has_trusted_rate_controller;
   frame_dropper_.Enable(frame_dropping_enabled);
@@ -2032,6 +2038,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   frame_encode_metadata_writer_.OnEncodeStarted(out_frame);
 
+  captured_time = rtc::TimeUTCMicros();
+
   const int32_t encode_status = encoder_->Encode(out_frame, &next_frame_types_);
   was_encode_called_since_last_initialization_ = true;
 
@@ -2129,11 +2137,46 @@ EncodedImage VideoStreamEncoder::AugmentEncodedImage(
   return image_copy;
 }
 
+std::string get_md5_from_encoded_image(const EncodedImage& encoded_image) {
+  // should include <openssl/md5.h>
+  unsigned char md5[16];
+  MD5_CTX ctx;
+  MD5_Init(&ctx);
+
+#if AV1_ENCODING
+  MD5_Update(&ctx, encoded_image.data() + 2, encoded_image.size() - 2); // I dont know why but there is a header of 2 bytes for AV1. Need to remove it to match the decoder
+#else
+  MD5_Update(&ctx, encoded_image.data(), encoded_image.size());
+#endif
+  MD5_Final(md5, &ctx);
+  // get string from md5
+  char md5string[33];
+  for (int i = 0; i < 16; ++i) {
+    sprintf(&md5string[i * 2], "%02x", (unsigned int)md5[i]);
+  }
+
+  std::string md5_(md5string);
+  return md5_;
+}
+
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
+
+  
+  encoded_time = rtc::TimeUTCMicros();
+  std::string md5_str = get_md5_from_encoded_image(encoded_image);
+
+#if AV1_ENCODING
+  int f_size = encoded_image.size() - 2;
+#else
+  int f_size = encoded_image.size();
+#endif
+  int rtp_ts = encoded_image.RtpTimestamp();
+
+  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << captured_time << " " << encoded_time << " " << md5_str << " " << rtp_ts;
 
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info
@@ -2251,21 +2294,21 @@ DataRate VideoStreamEncoder::UpdateTargetBitrate(DataRate target_bitrate,
   // Drop frames when congestion window pushback ratio is larger than 1
   // percent and target bitrate is larger than codec min bitrate.
   // When target_bitrate is 0 means codec is paused, skip frame dropping.
-  if (cwnd_reduce_ratio > 0.01 && target_bitrate.bps() > 0 &&
-      target_bitrate.bps() > send_codec_.minBitrate * 1000) {
-    int reduce_bitrate_bps = std::min(
-        static_cast<int>(target_bitrate.bps() * cwnd_reduce_ratio),
-        static_cast<int>(target_bitrate.bps() - send_codec_.minBitrate * 1000));
-    if (reduce_bitrate_bps > 0) {
-      // At maximum the congestion window can drop 1/2 frames.
-      cwnd_frame_drop_interval_ = std::max(
-          2, static_cast<int>(target_bitrate.bps() / reduce_bitrate_bps));
-      // Reduce target bitrate accordingly.
-      updated_target_bitrate =
-          target_bitrate - (target_bitrate / cwnd_frame_drop_interval_.value());
-      return updated_target_bitrate;
-    }
-  }
+  // if (cwnd_reduce_ratio > 0.01 && target_bitrate.bps() > 0 &&
+  //     target_bitrate.bps() > send_codec_.minBitrate * 1000) {
+  //   int reduce_bitrate_bps = std::min(
+  //       static_cast<int>(target_bitrate.bps() * cwnd_reduce_ratio),
+  //       static_cast<int>(target_bitrate.bps() - send_codec_.minBitrate * 1000));
+  //   if (reduce_bitrate_bps > 0) {
+  //     // At maximum the congestion window can drop 1/2 frames.
+  //     cwnd_frame_drop_interval_ = std::max(
+  //         2, static_cast<int>(target_bitrate.bps() / reduce_bitrate_bps));
+  //     // Reduce target bitrate accordingly.
+  //     updated_target_bitrate =
+  //         target_bitrate - (target_bitrate / cwnd_frame_drop_interval_.value());
+  //     return updated_target_bitrate;
+  //   }
+  // }
   cwnd_frame_drop_interval_.reset();
   return updated_target_bitrate;
 }
@@ -2276,6 +2319,8 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
                                           uint8_t fraction_lost,
                                           int64_t round_trip_time_ms,
                                           double cwnd_reduce_ratio) {
+  link_allocation = link_allocation * FACTOR;
+  target_bitrate = target_bitrate * FACTOR;
   RTC_DCHECK_GE(link_allocation, target_bitrate);
   if (!encoder_queue_.IsCurrent()) {
     encoder_queue_.PostTask([this, target_bitrate, stable_target_bitrate,
