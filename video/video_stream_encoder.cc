@@ -61,9 +61,11 @@
 
 #define AV1_ENCODING 0
 namespace webrtc {
-int64_t encoded_time;
+
+
 namespace {
 
+// std::string md5_str;
 // Time interval for logging frame counts.
 const int64_t kFrameLogIntervalMs = 60000;
 
@@ -86,7 +88,7 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
-int64_t captured_time;
+
 
 
 int GetNumSpatialLayers(const VideoCodec& codec) {
@@ -2038,7 +2040,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   frame_encode_metadata_writer_.OnEncodeStarted(out_frame);
 
-  captured_time = rtc::TimeUTCMicros();
+  log_captured_time = rtc::TimeUTCMicros();
 
   const int32_t encode_status = encoder_->Encode(out_frame, &next_frame_types_);
   was_encode_called_since_last_initialization_ = true;
@@ -2158,7 +2160,9 @@ std::string get_md5_from_encoded_image(const EncodedImage& encoded_image) {
   std::string md5_(md5string);
   return md5_;
 }
-
+int64_t log_encoded_time;
+int64_t log_captured_time;
+int f_size;
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
@@ -2166,17 +2170,14 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
                        "timestamp", encoded_image.RtpTimestamp());
 
   
-  encoded_time = rtc::TimeUTCMicros();
-  std::string md5_str = get_md5_from_encoded_image(encoded_image);
+  log_encoded_time = rtc::TimeUTCMicros();
+  // md5_str = get_md5_from_encoded_image(encoded_image);
 
 #if AV1_ENCODING
-  int f_size = encoded_image.size() - 2;
+  f_size = encoded_image.size() - 2;
 #else
-  int f_size = encoded_image.size();
+  f_size = encoded_image.size();
 #endif
-  int rtp_ts = encoded_image.RtpTimestamp();
-
-  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << captured_time << " " << encoded_time << " " << md5_str << " " << rtp_ts;
 
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info

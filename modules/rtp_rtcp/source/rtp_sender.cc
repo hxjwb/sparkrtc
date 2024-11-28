@@ -38,6 +38,10 @@
 namespace webrtc {
 
 namespace {
+
+
+// extern std::string md5_str;
+
 constexpr size_t kMinAudioPaddingLength = 50;
 constexpr size_t kRtpHeaderLength = 12;
 
@@ -460,11 +464,20 @@ std::vector<std::unique_ptr<RtpPacketToSend>> RTPSender::GeneratePadding(
 
   return padding_packets;
 }
-
+extern int64_t log_encoded_time;
+extern int64_t log_captured_time;
+extern int f_size;
 void RTPSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
   RTC_DCHECK(!packets.empty());
   Timestamp now = clock_->CurrentTime();
+  int rtp_ts = 0;
+  if (packets.size() != 0) {
+    rtp_ts =  packets[0]->Timestamp();
+  }
+  
+  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|md5 " <<f_size << " " << log_captured_time << " " << log_encoded_time << " " << rtp_ts;
+
   for (auto& packet : packets) {
     RTC_DCHECK(packet);
     RTC_CHECK(packet->packet_type().has_value())
