@@ -46,7 +46,7 @@
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/ntp_time.h"
-
+#include "rtc_base/time_utils.h"
 namespace webrtc {
 
 namespace {
@@ -852,7 +852,8 @@ void RtpVideoStreamReceiver2::OnAssembledFrame(
     std::unique_ptr<RtpFrameObject> frame) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   RTC_DCHECK(frame);
-
+  uint64_t now = rtc::TimeUTCMicros();
+  RTC_LOG(LS_INFO) << "Assembled " << frame->RtpTimestamp() << " " << now;
   const absl::optional<RTPVideoHeader::GenericDescriptorInfo>& descriptor =
       frame->GetRtpVideoHeader().generic;
 

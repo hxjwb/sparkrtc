@@ -57,11 +57,12 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 
-#include <openssl/md5.h>
 
 #define AV1_ENCODING 0
 namespace webrtc {
-
+extern int64_t log_encoded_time;
+extern int64_t log_captured_time;
+extern int f_size;
 
 namespace {
 
@@ -2139,30 +2140,7 @@ EncodedImage VideoStreamEncoder::AugmentEncodedImage(
   return image_copy;
 }
 
-std::string get_md5_from_encoded_image(const EncodedImage& encoded_image) {
-  // should include <openssl/md5.h>
-  unsigned char md5[16];
-  MD5_CTX ctx;
-  MD5_Init(&ctx);
 
-#if AV1_ENCODING
-  MD5_Update(&ctx, encoded_image.data() + 2, encoded_image.size() - 2); // I dont know why but there is a header of 2 bytes for AV1. Need to remove it to match the decoder
-#else
-  MD5_Update(&ctx, encoded_image.data(), encoded_image.size());
-#endif
-  MD5_Final(md5, &ctx);
-  // get string from md5
-  char md5string[33];
-  for (int i = 0; i < 16; ++i) {
-    sprintf(&md5string[i * 2], "%02x", (unsigned int)md5[i]);
-  }
-
-  std::string md5_(md5string);
-  return md5_;
-}
-int64_t log_encoded_time;
-int64_t log_captured_time;
-int f_size;
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {

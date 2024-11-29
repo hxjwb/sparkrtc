@@ -30,7 +30,6 @@
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/metrics.h"
-#include <openssl/md5.h>
 
 namespace webrtc {
 
@@ -41,7 +40,6 @@ constexpr size_t kDecoderFrameMemoryLength = 10;
 }
 
 int64_t before_decode_time;
-std::string* md5_str;
 int frame_size;
 VCMDecodedFrameCallback::VCMDecodedFrameCallback(
     VCMTiming* timing,
@@ -116,8 +114,8 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   // Get Unix timestamp
   
   
-  int rtpts = decodedImage.timestamp();
-  RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|md5 " << frame_size << " " << before_decode_time << " " << decoded_time << " " << *md5_str << " " << rtpts;
+  uint32_t rtpts = decodedImage.timestamp();
+  RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|rtpts " << frame_size << " " << before_decode_time << " " << decoded_time  << " " << rtpts;
 
 
   absl::optional<FrameInfo> frame_info;
@@ -294,26 +292,8 @@ bool VCMGenericDecoder::Configure(const VideoDecoder::Settings& settings) {
   return ok;
 }
 
-std::string get_md5_from_encoded_image_dec(const EncodedImage& encoded_image) {
-  // should include <openssl/md5.h>
-  unsigned char md5[16];
-  MD5_CTX ctx;
-  MD5_Init(&ctx);
-  MD5_Update(&ctx, encoded_image.data(), encoded_image.size());
-  MD5_Final(md5, &ctx);
-  // get string from md5
-  char md5string[33];
-  for (int i = 0; i < 16; ++i) {
-    sprintf(&md5string[i * 2], "%02x", (unsigned int)md5[i]);
-  }
-
-  std::string md5_(md5string);
-  return md5_;
-}
 
 int32_t VCMGenericDecoder::Decode(const EncodedFrame& frame, Timestamp now) {
-  std::string md5_str_ = get_md5_from_encoded_image_dec(frame);
-  md5_str = &md5_str_;
   frame_size = frame.size();
   before_decode_time = rtc::TimeUTCMicros();
   return Decode(frame, now, frame.RenderTimeMs());
