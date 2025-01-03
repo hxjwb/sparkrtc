@@ -187,6 +187,9 @@ void PacingController::SetPacingRates(DataRate pacing_rate,
 }
 
 void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
+  // int64_t push_time = rtc::TimeUTCMicros();
+  // uint32_t ts = packet->Timestamp();
+  // RTC_LOG(LS_INFO) << "PUSH " << ts << " " << push_time;
   RTC_DCHECK(pacing_rate_ > DataRate::Zero())
       << "SetPacingRate must be called before InsertPacket.";
   RTC_CHECK(packet->packet_type());
@@ -484,9 +487,12 @@ void PacingController::ProcessPackets() {
 
       if (include_overhead_) {
         packet_size += DataSize::Bytes(rtp_packet->headers_size()) +
-                       transport_overhead_per_packet_;
+                      transport_overhead_per_packet_;
       }
-
+      // int64_t pop_time = rtc::TimeUTCMicros();
+      // uint32_t ts_pop = rtp_packet->Timestamp();
+      // int seq_num = rtp_packet->SequenceNumber();
+      // RTC_LOG(LS_INFO) << "POP " << ts_pop << " " << pop_time << " " << seq_num;
       packet_sender_->SendPacket(std::move(rtp_packet), pacing_info);
       for (auto& packet : packet_sender_->FetchFec()) {
         EnqueuePacket(std::move(packet));

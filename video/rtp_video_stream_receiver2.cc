@@ -790,6 +790,12 @@ void RtpVideoStreamReceiver2::OnInsertedPacket(
         rtp_seq_num_unwrapper_.Unwrap(packet->seq_num);
     RTC_DCHECK_GT(packet_infos_.count(unwrapped_rtp_seq_num), 0);
     RtpPacketInfo& packet_info = packet_infos_[unwrapped_rtp_seq_num];
+    int64_t now = clock_->CurrentTime().us();
+    int64_t recv_time = packet_info.receive_time().us();
+    int64_t offset = recv_time - now;
+    int64_t now_utc = rtc::TimeUTCMicros();
+    int64_t recv_time_utc = now_utc + offset;
+    RTC_LOG(LS_INFO) << "Received " << packet_info.rtp_timestamp() << " "  <<  packet->seq_num << " " << recv_time_utc;
     if (packet->is_first_packet_in_frame()) {
       first_packet = packet.get();
       max_nack_count = packet->times_nacked;

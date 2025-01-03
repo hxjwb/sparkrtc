@@ -15,7 +15,7 @@
 #include "absl/types/optional.h"
 #include "api/units/data_size.h"
 #include "rtc_base/checks.h"
-
+#include "rtc_base/logging.h"
 namespace webrtc {
 namespace pcc {
 namespace {
@@ -124,6 +124,7 @@ NetworkControlUpdate PccNetworkController::CreateRateUpdate(
 }
 
 NetworkControlUpdate PccNetworkController::OnSentPacket(SentPacket msg) {
+  RTC_LOG(LS_INFO) << "pcc";
   // Start new monitor interval if previous has finished.
   // Monitor interval is initialized in OnProcessInterval function.
   if (start_time_.IsInfinite()) {

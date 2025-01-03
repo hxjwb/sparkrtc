@@ -19,7 +19,7 @@
 #include "api/units/timestamp.h"
 #include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
 #include "rtc_base/logging.h"
-
+#include "rtc_base/time_utils.h"
 namespace webrtc {
 namespace {
 constexpr uint32_t kTimestampTicksPerMs = 90;
@@ -217,6 +217,9 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
       packet->set_pacer_exit_time(now);
     }
   }
+
+  RTC_LOG(LS_INFO) << "PacketSend " << packet->Timestamp() << " "
+                   << packet->SequenceNumber() << " " << rtc::TimeUTCMicros();
 
   auto compound_packet = Packet{std::move(packet), pacing_info, now};
   if (enable_send_packet_batching_ && !is_audio_) {
