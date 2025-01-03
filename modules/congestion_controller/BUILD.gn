@@ -37,6 +37,7 @@ rtc_library("congestion_controller") {
     "../../rtc_base/synchronization:mutex",
     "../pacing",
     "pcc",
+    "bbr",
     "../remote_bitrate_estimator",
     "../rtp_rtcp:rtp_rtcp_format",
   ]
