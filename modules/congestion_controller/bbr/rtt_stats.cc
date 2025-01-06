@@ -80,7 +80,7 @@ void RttStats::UpdateRtt(TimeDelta send_delta,
     mean_deviation_ = kOneMinusBeta * mean_deviation_ +
                       kBeta * (smoothed_rtt_ - rtt_sample).Abs();
     smoothed_rtt_ = kOneMinusAlpha * smoothed_rtt_ + kAlpha * rtt_sample;
-    RTC_LOG(LS_VERBOSE) << " smoothed_rtt(us):" << smoothed_rtt_.us()
+    RTC_LOG(LS_INFO) << " smoothed_rtt(us):" << smoothed_rtt_.us()
                         << " mean_deviation(us):" << mean_deviation_.us();
   }
 }

@@ -383,7 +383,7 @@ class BbrNetworkController : public NetworkControllerInterface {
   bool app_limited_since_last_probe_rtt_;
   TimeDelta min_rtt_since_last_probe_rtt_;
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(BbrNetworkController);
+  // RTC_DISALLOW_COPY_AND_ASSIGN(BbrNetworkController);
 };
 
 // Used in log output

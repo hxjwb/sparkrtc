@@ -17,7 +17,7 @@ rtc_library("bbr") {
     ":bbr_controller",
     "../../../api/transport:network_control",
     "../../../api/units:time_delta",
-    "../../../rtc_base:rtc_base_approved",
+   #  "../../../rtc_base:rtc_base_approved",
   ]
 }
 
@@ -34,7 +34,7 @@ rtc_library("bbr_controller") {
     ":windowed_filter",
     "../../../api/transport:network_control",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    # "../../../rtc_base:rtc_base_approved",
     "../../../rtc_base/experiments:field_trial_parser",
     "../../../system_wrappers:field_trial",
     "//third_party/abseil-cpp/absl/base:core_headers",
@@ -55,7 +55,7 @@ rtc_library("bandwidth_sampler") {
     "../../../api/units:time_delta",
     "../../../api/units:timestamp",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    # "../../../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
@@ -71,7 +71,7 @@ rtc_library("data_transfer_tracker") {
     "../../../api/units:time_delta",
     "../../../api/units:timestamp",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+   #  "../../../rtc_base:rtc_base_approved",
   ]
 }
 
@@ -99,7 +99,7 @@ rtc_library("rtt_stats") {
     "../../../api/units:time_delta",
     "../../../api/units:timestamp",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    # "../../../rtc_base:rtc_base_approved",
   ]
 }
 rtc_source_set("windowed_filter") {

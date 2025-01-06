@@ -16,7 +16,7 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/constructor_magic.h"
+// #include "rtc_base/constructor_magic.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -78,7 +78,7 @@ class RttStats {
   TimeDelta mean_deviation_;
   int64_t initial_rtt_us_;
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(RttStats);
+  // RTC_DISALLOW_COPY_AND_ASSIGN(RttStats);
 };
 
 }  // namespace bbr
