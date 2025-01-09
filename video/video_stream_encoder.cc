@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #define FACTOR 1.0f
+#define ACTION 0
 #include "video/video_stream_encoder.h"
 
 #include <algorithm>
@@ -2139,15 +2140,39 @@ EncodedImage VideoStreamEncoder::AugmentEncodedImage(
 
   return image_copy;
 }
-
-
+#if ACTION
+extern int current_available_token;
+extern int token_bucket_size;
+extern int nack_state;
+extern int predicted_queue_packets;
+float bucket_adjust_factor = 0.5; // initialize as half the average frame size
+#endif
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
+#if ACTION
+  if (predicted_queue_packets > 10){
+    bucket_adjust_factor /= 2; // Multiplicative decrease
+    // if (bucket_adjust_factor < 0.2) bucket_adjust_factor = 0.2;
+  } 
+  else if (nack_state > 0 ) {
+    bucket_adjust_factor /= 2;
+    nack_state = 0;
+    // always allow at least 0.2 bucket size
+    // if (bucket_adjust_factor < 0.2) bucket_adjust_factor = 0.2;
+  }
+  else {
+    bucket_adjust_factor += 0.05; // Additive increase
+    // cap by 3
+    if (bucket_adjust_factor > 3) bucket_adjust_factor = 3;
+  }
+  RTC_LOG(LS_INFO) << "bucket_adjust_factor: " << bucket_adjust_factor * 10;
+  token_bucket_size *= bucket_adjust_factor;
+  current_available_token = token_bucket_size;
+#endif
 
-  
   log_encoded_time = rtc::TimeUTCMicros();
   // md5_str = get_md5_from_encoded_image(encoded_image);
 

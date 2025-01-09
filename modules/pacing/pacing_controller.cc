@@ -203,8 +203,8 @@ void PacingController::SetPacingRates(DataRate pacing_rate,
   padding_rate_ = padding_rate;
 #if ACTION
   // token_bucket_rate = pacing_rate.kbps();
-  token_bucket_size = pacing_rate.kbps() / 30 / 8 * 1000;  // Byte
-  token_bucket_size *= 0.01;
+  token_bucket_size = pacing_rate.kbps() / 30 / 8 * 1000;  // Byte for one frame
+
 #endif
   MaybeUpdateMediaRateDueToLongQueue(CurrentTime());
   RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps=" << pacing_rate.kbps()
@@ -539,14 +539,14 @@ void PacingController::ProcessPackets() {
 #if ACTION
   if (current_available_token > 0) {
     bursty_sending = true;
-    adjusted_media_rate_ = pacing_rate_ * 100;
+    adjusted_media_rate_ = pacing_rate_ * 100; // allow bursty sending
   }
   else {
     bursty_sending = false;
-    adjusted_media_rate_ = pacing_rate_;
+    adjusted_media_rate_ = pacing_rate_; // paced sending
   }
 #endif
-
+  // adjusted_media_rate_ = pacing_rate_ * 100;
   const Timestamp now = CurrentTime();
   Timestamp target_send_time = now;
 

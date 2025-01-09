@@ -1091,7 +1091,7 @@ void RTCPReceiver::NotifyTmmbrUpdated() {
   // Send tmmbn to inform remote clients about the new bandwidth.
   rtp_rtcp_->SetTmmbn(std::move(bounding));
 }
-
+int nack_state = 0;
 // Holding no Critical section.
 void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
     const PacketInformation& packet_information) {
@@ -1109,6 +1109,7 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
     if (!packet_information.nack_sequence_numbers.empty()) {
       RTC_LOG(LS_VERBOSE) << "Incoming NACK length: "
                           << packet_information.nack_sequence_numbers.size();
+      nack_state = packet_information.nack_sequence_numbers.size();
       rtp_rtcp_->OnReceivedNack(packet_information.nack_sequence_numbers);
     }
   }
