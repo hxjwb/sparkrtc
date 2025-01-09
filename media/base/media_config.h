@@ -61,7 +61,7 @@ struct MediaConfig {
     bool experiment_cpu_load_estimator = false;
 
     // Time interval between RTCP report for video
-    int rtcp_report_interval_ms = 30;
+    int rtcp_report_interval_ms = 10;
 
     // Enables send packet batching from the egress RTP sender.
     bool enable_send_packet_batching = false;

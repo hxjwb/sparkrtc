@@ -168,7 +168,7 @@ class VideoSendStream {
     VideoStreamEncoderSettings encoder_settings;
 
     // Time interval between RTCP report for video
-    int rtcp_report_interval_ms = 30;
+    int rtcp_report_interval_ms = 10;
 
     // Transport for outgoing packets.
     Transport* send_transport = nullptr;
