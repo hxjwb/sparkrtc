@@ -1,3 +1,16 @@
+
+# ACE
+
+this branch is by default enabling x264.
+
+1. Modified x264: https://github.com/hxjwb/x264. Get the lib and specify 'libx264.a' location in video_codec/BUILD.gn.
+
+2. Turn on actions
+
+In both x264 and webrtc, search for "#define ACTION" macros to turn on ACE actions. It should be in 'sparkrtc/rtc_base/logging.h' for ACE-N(pacer) and 'x264/encoder/encoder.c' for ACE-C(Codec). 
+
+
+
 # Libx264 branch
 
 <!-- This branch is created because we got some issues about libx264 involvement in main branch. Now it is included, but not used as a default. It also should be built from another source and versions are lack of control.

@@ -8,7 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #define FACTOR 1.0f
-#define ACTION 0
 #include "video/video_stream_encoder.h"
 
 #include <algorithm>

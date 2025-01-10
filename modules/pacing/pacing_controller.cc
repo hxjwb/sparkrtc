@@ -28,7 +28,6 @@
 #include <unordered_map>
 // deque
 
-#define ACTION 0
 
 
 #define PACTIONP 0
