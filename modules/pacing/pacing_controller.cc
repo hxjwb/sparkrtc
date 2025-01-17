@@ -21,6 +21,7 @@
 #include "modules/pacing/interval_budget.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/ace.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
 
