@@ -17,6 +17,7 @@
 #include "api/field_trials_view.h"
 #include "api/units/data_size.h"
 #include "rtc_base/experiments/rate_control_settings.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -57,7 +58,7 @@ uint32_t CongestionWindowPushbackController::UpdateTargetBitrate(
       total_bytes / static_cast<double>(current_data_window_->bytes());
   if (fill_ratio > 1.5) {
     encoding_rate_ratio_ *= 0.9;
-  } else if (fill_ratio > 1) {
+  } else if (fill_ratio > 1) {                              
     encoding_rate_ratio_ *= 0.95;
   } else if (fill_ratio < 0.1) {
     encoding_rate_ratio_ = 1.0;
@@ -67,6 +68,7 @@ uint32_t CongestionWindowPushbackController::UpdateTargetBitrate(
   }
   uint32_t adjusted_target_bitrate_bps =
       static_cast<uint32_t>(bitrate_bps * encoding_rate_ratio_);
+  RTC_LOG(LS_INFO) << "mhhh CongestionWindowPushbackController::UpdateTargetBitrate bitrate_bps:" << bitrate_bps << " outstanding_bytes_:" << outstanding_bytes_ << " pacing_bytes_:" << pacing_bytes_ << " total_bytes:" << total_bytes << " current_data_window_->bytes():" << current_data_window_->bytes() << " fill_ratio:" << fill_ratio << " encoding_rate_ratio_:" << encoding_rate_ratio_;
 
   // Do not adjust below the minimum pushback bitrate but do obey if the
   // original estimate is below it.

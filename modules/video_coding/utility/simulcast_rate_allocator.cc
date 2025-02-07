@@ -23,6 +23,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/rate_control_settings.h"
 #include "system_wrappers/include/field_trial.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace {
@@ -62,7 +63,7 @@ SimulcastRateAllocator::SimulcastRateAllocator(const VideoCodec& codec)
     : codec_(codec),
       stable_rate_settings_(StableTargetRateExperiment::ParseFromFieldTrials()),
       rate_control_settings_(RateControlSettings::ParseFromFieldTrials()),
-      legacy_conference_mode_(false) {}
+      legacy_conference_mode_(false) { RTC_LOG(LS_INFO) << "mhhh SimulcastRateAllocator::SimulcastRateAllocator";}
 
 SimulcastRateAllocator::~SimulcastRateAllocator() = default;
 
@@ -77,6 +78,7 @@ VideoBitrateAllocation SimulcastRateAllocator::Allocate(
   DistributeAllocationToSimulcastLayers(parameters.total_bitrate, stable_rate,
                                         &allocated_bitrates);
   DistributeAllocationToTemporalLayers(&allocated_bitrates);
+  RTC_LOG(LS_INFO) << "mhhh Allocate" << allocated_bitrates.GetBitrate(0, 0);
   return allocated_bitrates;
 }
 

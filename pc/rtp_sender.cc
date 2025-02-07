@@ -804,6 +804,7 @@ void VideoRtpSender::OnChanged() {
   if (cached_track_content_hint_ != content_hint) {
     cached_track_content_hint_ = content_hint;
     if (can_send_track()) {
+      RTC_LOG(LS_INFO) << "mhhh VideoRtpSender::OnChanged SetSend()";
       SetSend();
     }
   }
@@ -875,6 +876,7 @@ void VideoRtpSender::SetSend() {
       break;
   }
   bool success = worker_thread_->BlockingCall([&] {
+    RTC_LOG(LS_INFO) << "mhhh VideoRtpSender::SetSend()";
     return video_media_channel()->SetVideoSend(ssrc_, &options,
                                                video_track().get());
   });

@@ -206,6 +206,7 @@ H264EncoderImpl::H264EncoderImpl(const cricket::VideoCodec& codec)
       encoded_image_callback_(nullptr),
       has_reported_init_(false),
       has_reported_error_(false) {
+        RTC_LOG(LS_INFO) << "mhhh Final!! H264EncoderImpl::H264EncoderImpl";
   RTC_CHECK(absl::EqualsIgnoreCase(codec.name, cricket::kH264CodecName));
   std::string packetization_mode_string;
   if (codec.GetParam(cricket::kH264FmtpPacketizationMode,
@@ -225,6 +226,7 @@ H264EncoderImpl::~H264EncoderImpl() {
   Release();
 }
 
+int scale = 1;
 int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
                                     const VideoEncoder::Settings& settings) {
   ReportInit();
@@ -271,8 +273,11 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   // Code expects simulcastStream resolutions to be correct, make sure they are
   // filled even when there are no simulcast layers.
   if (codec_.numberOfSimulcastStreams == 0) {
-    codec_.simulcastStream[0].width = codec_.width;
-    codec_.simulcastStream[0].height = codec_.height;
+    codec_.simulcastStream[0].width = codec_.width / scale;
+    codec_.simulcastStream[0].height = codec_.height / scale;
+  } else {
+    codec_.simulcastStream[0].width = codec_.width / scale;
+    codec_.simulcastStream[0].height = codec_.height / scale;
   }
 
   for (int i = 0, idx = number_of_streams - 1; i < number_of_streams;
@@ -299,16 +304,18 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  int bitrate_kbps = 28000;
+  int bitrate_kbps = 3000;
 
   param_.i_threads = 1;
-  param_.i_width = inst->width;
-  param_.i_height = inst->height;
+  param_.i_width = inst->width / scale;
+  param_.i_height = inst->height / scale;
   param_.i_frame_total = 0;  
   param_.i_keyint_max = 1500;
   param_.rc.i_rc_method = X264_RC_ABR;
-  param_.rc.i_vbv_max_bitrate = bitrate_kbps;
-  param_.rc.i_vbv_buffer_size = bitrate_kbps;
+  // param_.rc.i_rc_method = X264_RC_CRF;
+  // param_.rc.f_rf_constant = 23;
+  param_.rc.i_vbv_max_bitrate = 0;//bitrate_kbps;
+  param_.rc.i_vbv_buffer_size = 0;//bitrate_kbps;
   // param_.i_bframe = 0;
   // param_.b_open_gop = 0;
   // param_.i_bframe_pyramid = 0;
@@ -472,6 +479,7 @@ int32_t H264EncoderImpl::RegisterEncodeCompleteCallback(
 
 static int set_rate_count = 0;
 void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
+  RTC_LOG(LS_INFO) << "*************** SetRates ************************";
   if (encoder_ == NULL) {
     RTC_LOG(LS_WARNING) << "SetRates() while uninitialized.";
     return;
@@ -503,16 +511,26 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
 
     if (configurations_[i].target_bps) {
       int bitrate_kbps = configurations_[i].target_bps / 1000;
-      auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       int vbv_size = parameters.framerate_fps;
-      RTC_LOG(LS_INFO) << "Send Statistics SetRates, stream " << i << " target_bitrate "
-                       << bitrate_kbps << " framerate "
-                       << parameters.framerate_fps << " current time: " << current_time
-                       << " vbv buffer size: " << bitrate_kbps * vbv_size / parameters.framerate_fps;
+      // ************************************
+      bool enable_vbv = false;
+      // ************************************
       configurations_[i].SetStreamState(true);
+      // if (bitrate_kbps < 2000) {
+      //   param_.rc.i_bitrate = 1000;
+      //   // param_.rc.i_vbv_max_bitrate = 1000;
+      // } else {
+      //   param_.rc.i_bitrate = 8000;
+      //   // param_.rc.i_vbv_max_bitrate = 8000;
+      // }
       param_.rc.i_bitrate = bitrate_kbps;
       if (set_rate_count > 5) {
-        param_.rc.i_vbv_buffer_size = bitrate_kbps * vbv_size / parameters.framerate_fps;
+        if (enable_vbv) {
+          param_.rc.i_vbv_buffer_size = bitrate_kbps * vbv_size / parameters.framerate_fps;
+          param_.rc.i_vbv_max_bitrate = bitrate_kbps;
+        } else {
+          vbv_size = 0;
+        }
       }
       set_rate_count++;
       param_.i_fps_num = static_cast<int>(parameters.framerate_fps);
@@ -547,6 +565,9 @@ int32_t H264EncoderImpl::Encode(
 
   rtc::scoped_refptr<I420BufferInterface> frame_buffer =
       input_frame.video_frame_buffer()->ToI420();
+  if (frame_buffer) {
+    frame_buffer = frame_buffer->Scale(input_frame.width() / scale, input_frame.height() / scale)->ToI420();
+  }
   if (!frame_buffer) {
     RTC_LOG(LS_ERROR) << "Failed to convert "
                       << VideoFrameBufferTypeToString(
@@ -622,8 +643,6 @@ int32_t H264EncoderImpl::Encode(
     int n_nal = 0;
     int i_frame_size =
         x264_encoder_encode(encoder_, &nal_t_, &n_nal, &pic_, &pic_out_);
-    auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    RTC_LOG(LS_INFO) << "Send Statistics Send Frame Size: " << i_frame_size << " current time: " << current_time;
     if (i_frame_size < 0) {
       // WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
       //              "H264EncoderImpl::Encode() fails to encode %d",
@@ -638,6 +657,8 @@ int32_t H264EncoderImpl::Encode(
       ReportError();
       return WEBRTC_VIDEO_CODEC_ERROR;
     }
+
+    RTC_LOG(LS_INFO) << "Statistics Frame Size: " << i_frame_size;
 
     RtpFragmentize(&encoded_images_[i], nal_t_, n_nal);
     

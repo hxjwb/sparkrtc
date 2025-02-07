@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include <cstdint>
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -48,11 +49,13 @@ bool FramerateControllerDeprecated::DropFrame(uint32_t timestamp_ms) const {
   if (timestamp_ms < last_timestamp_ms_) {
     // Timestamp jumps backward. We can't make adequate drop decision. Don't
     // drop this frame. Stats will be reset in AddFrame().
+    RTC_LOG(LS_INFO) << "mhhh FramerateControllerDeprecated test1";
     return false;
   }
 
   if (Rate(timestamp_ms).value_or(*target_framerate_fps_) >
       target_framerate_fps_) {
+        RTC_LOG(LS_INFO) << "mhhh FramerateControllerDeprecated test2";
     return true;
   }
 
@@ -60,10 +63,11 @@ bool FramerateControllerDeprecated::DropFrame(uint32_t timestamp_ms) const {
     const int64_t diff_ms =
         static_cast<int64_t>(timestamp_ms) - *last_timestamp_ms_;
     if (diff_ms < min_frame_interval_ms_) {
+      RTC_LOG(LS_INFO) << "mhhh FramerateControllerDeprecated test3";
       return true;
     }
   }
-
+  RTC_LOG(LS_INFO) << "mhhh FramerateControllerDeprecated test4";
   return false;
 }
 

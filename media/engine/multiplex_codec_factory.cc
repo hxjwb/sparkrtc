@@ -59,6 +59,7 @@ std::vector<SdpVideoFormat> MultiplexEncoderFactory::GetSupportedFormats()
 
 std::unique_ptr<VideoEncoder> MultiplexEncoderFactory::CreateVideoEncoder(
     const SdpVideoFormat& format) {
+      printf("mhhh MultiplexEncoderFactory::CreateVideoEncoder");
   if (!IsMultiplexCodec(cricket::CreateVideoCodec(format)))
     return factory_->CreateVideoEncoder(format);
   const auto& it =

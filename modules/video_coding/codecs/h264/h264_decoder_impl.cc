@@ -12,7 +12,7 @@
 // Everything declared/defined in this header is only required when WebRTC is
 // build with H264 support, please do not move anything out of the
 // #ifdef unless needed and tested.
-#ifdef WEBRTC_USE_H264
+// #ifdef WEBRTC_USE_H264
 
 #include "modules/video_coding/codecs/h264/h264_decoder_impl.h"
 
@@ -609,7 +609,13 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
   const ColorSpace& color_space =
       input_image.ColorSpace() ? *input_image.ColorSpace()
                                : ExtractH264ColorSpace(av_context_.get());
-
+  bool enable_scale = false;
+  if (enable_scale && cropped_buffer) {
+    int scale = 2;
+    int height = av_frame_->height;
+    int width = av_frame_->width;
+    cropped_buffer = cropped_buffer->Scale(width * scale, height * scale);
+  }
   VideoFrame decoded_frame = VideoFrame::Builder()
                                  .set_video_frame_buffer(cropped_buffer)
                                  .set_timestamp_rtp(input_image.RtpTimestamp())
@@ -654,4 +660,4 @@ void H264DecoderImpl::ReportError() {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_USE_H264
+// #endif  // WEBRTC_USE_H264

@@ -47,6 +47,7 @@ std::vector<SdpVideoFormat> InternalEncoderFactory::GetSupportedFormats()
 
 std::unique_ptr<VideoEncoder> InternalEncoderFactory::CreateVideoEncoder(
     const SdpVideoFormat& format) {
+        printf("mhhh InternalEncoderFactory::CreateVideoEncoder");
   auto original_format =
       FuzzyMatchSdpVideoFormat(Factory().GetSupportedFormats(), format);
   return original_format ? Factory().CreateVideoEncoder(*original_format)

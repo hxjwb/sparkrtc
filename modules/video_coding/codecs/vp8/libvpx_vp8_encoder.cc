@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "absl/algorithm/container.h"
 #include "api/scoped_refptr.h"
@@ -980,6 +981,7 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
                              const std::vector<VideoFrameType>* frame_types) {
   RTC_DCHECK_EQ(frame.width(), codec_.width);
   RTC_DCHECK_EQ(frame.height(), codec_.height);
+  RTC_LOG(LS_INFO) << "mhhh LibvpxVp8Encoder::Encode";
 
   if (!inited_)
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
@@ -1027,6 +1029,7 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
     if (variable_framerate_experiment_.enabled &&
         framerate_controller_.DropFrame(frame.timestamp() / kRtpTicksPerMs) &&
         frame_drop_overrides_.empty()) {
+      RTC_LOG(LS_INFO) << "mhhh LibvpxVp8Encoder::Encode: drop frame by framerate_controller";
       return WEBRTC_VIDEO_CODEC_OK;
     }
     framerate_controller_.AddFrame(frame.timestamp() / kRtpTicksPerMs);
@@ -1047,6 +1050,7 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
   }
 
   if (drop_frame && !send_key_frame) {
+    RTC_LOG(LS_INFO) << "mhhh LibvpxVp8Encoder::Encode: drop frame by frame_buffer_controller config";
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
@@ -1144,6 +1148,7 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
   }
   // TODO(sprang): Shouldn't we use the frame timestamp instead?
   timestamp_ += duration;
+  RTC_LOG(LS_INFO) << "mhhh LibvpxVp8Encoder::Encode: return final";
   return error;
 }
 
@@ -1271,6 +1276,7 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
         last_encoder_output_time_[stream_idx] =
             Timestamp::Micros(input_image.timestamp_us());
 
+        RTC_LOG(LS_INFO) << "mhhh vp8 encoded frame size > 0";
         encoded_complete_callback_->OnEncodedImage(encoded_images_[encoder_idx],
                                                    &codec_specific);
         const size_t steady_state_size = SteadyStateSize(

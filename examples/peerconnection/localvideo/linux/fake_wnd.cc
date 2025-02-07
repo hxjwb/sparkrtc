@@ -198,6 +198,7 @@ void FakeMainWnd::VideoRenderer::SetSize(int width, int height) {
 }
 
 void FakeMainWnd::VideoRenderer::OnFrame(const webrtc::VideoFrame& video_frame) {
+  RTC_LOG(LS_INFO) << "mhhh FakeMainWnd::VideoRenderer::OnFrame";
 
   rtc::scoped_refptr<webrtc::I420BufferInterface> buffer(
       video_frame.video_frame_buffer()->ToI420());

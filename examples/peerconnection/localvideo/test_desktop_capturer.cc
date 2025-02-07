@@ -9,6 +9,7 @@ namespace webrtc {
 void TestDesktopCapturer::AddOrUpdateSink(
     rtc::VideoSinkInterface<VideoFrame>* sink,
     const rtc::VideoSinkWants& wants) {
+      RTC_LOG(LS_INFO) << "mhhh TestDesktopCapturer::AddOrUpdateSink";
   broadcaster_.AddOrUpdateSink(sink, wants);
   UpdateVideoAdapter();
 }
@@ -54,6 +55,7 @@ void TestDesktopCapturer::OnFrame(const VideoFrame& frame) {
             .set_id(frame.id());
     broadcaster_.OnFrame(new_frame_builder.build());
   } else {
+    RTC_LOG(LS_INFO) << "broadcaster_.OnFrame";
     // No adaptations needed, just return the frame as is.
     broadcaster_.OnFrame(frame);
   }

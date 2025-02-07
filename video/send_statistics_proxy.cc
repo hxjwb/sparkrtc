@@ -307,6 +307,7 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   const int kMinRequiredPeriodicSamples = 6;
   char log_stream_buf[8 * 1024];
   rtc::SimpleStringBuilder log_stream(log_stream_buf);
+  log_stream << "mhhh log_stream output:";
   int in_width = input_width_counter_.Avg(kMinRequiredMetricsSamples);
   int in_height = input_height_counter_.Avg(kMinRequiredMetricsSamples);
   if (in_width != -1) {

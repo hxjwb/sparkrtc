@@ -53,6 +53,7 @@ void VideoTrack::AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
   VideoSourceBaseGuarded::AddOrUpdateSink(sink, wants);
   rtc::VideoSinkWants modified_wants = wants;
   modified_wants.black_frames = !enabled_w_;
+  printf("mhhh addsink VideoTrack::AddOrUpdateSink\n");
   video_source_->internal()->AddOrUpdateSink(sink, modified_wants);
 }
 

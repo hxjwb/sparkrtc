@@ -29,6 +29,7 @@ void VideoTrackSource::AddOrUpdateSink(
     rtc::VideoSinkInterface<VideoFrame>* sink,
     const rtc::VideoSinkWants& wants) {
   RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  RTC_LOG(LS_INFO) << "mhhh addsink VideoTrackSource::AddOrUpdateSink source()->Add";
   source()->AddOrUpdateSink(sink, wants);
 }
 

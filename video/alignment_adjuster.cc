@@ -69,6 +69,7 @@ int AlignmentAdjuster::GetAlignmentAndMaybeAdjustScaleFactors(
     VideoEncoderConfig* config,
     absl::optional<size_t> max_layers) {
   const int requested_alignment = encoder_info.requested_resolution_alignment;
+  RTC_LOG(LS_INFO) << "mhhh AlignmentAdjuster::GetAlignmentAndMaybeAdjustScaleFactors:" << requested_alignment;
   if (!encoder_info.apply_alignment_to_all_simulcast_layers) {
     return requested_alignment;
   }

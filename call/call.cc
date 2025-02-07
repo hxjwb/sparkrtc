@@ -897,6 +897,7 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
     webrtc::VideoSendStream::Config config,
     VideoEncoderConfig encoder_config,
     std::unique_ptr<FecController> fec_controller) {
+  RTC_LOG(LS_INFO) << "mhhh Call::CreateVideoSendStream";
   TRACE_EVENT0("webrtc", "Call::CreateVideoSendStream");
   RTC_DCHECK_RUN_ON(worker_thread_);
 
@@ -921,6 +922,7 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
       std::move(config), std::move(encoder_config), suspended_video_send_ssrcs_,
       suspended_video_payload_states_, std::move(fec_controller),
       *config_.trials);
+  RTC_LOG(LS_INFO) << "mhhh Finished new VideoSendStream";
 
   for (uint32_t ssrc : ssrcs) {
     RTC_DCHECK(video_send_ssrcs_.find(ssrc) == video_send_ssrcs_.end());
@@ -1300,6 +1302,7 @@ void Call::OnTargetTransferRate(TargetTransferRate msg) {
   uint32_t target_bitrate_bps = msg.target_rate.bps();
   // For controlling the rate of feedback messages.
   receive_side_cc_.OnBitrateChanged(target_bitrate_bps);
+  RTC_LOG(LS_INFO) << "mhhh Call::OnTargetTransferRate";
   bitrate_allocator_->OnNetworkEstimateChanged(msg);
 
   last_bandwidth_bps_.store(target_bitrate_bps, std::memory_order_relaxed);

@@ -204,6 +204,7 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     if (rtx_ssrc) {
       packet_queue_.RemovePacketsForSsrc(*rtx_ssrc);
     }
+    RTC_LOG(LS_INFO) << "Pacer key frame flush all remained frames";
   }
 
   prober_.OnIncomingPacket(DataSize::Bytes(packet->payload_size()));
@@ -221,6 +222,9 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
       target_process_time = std::min(now, next_send_time);
     }
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target_process_time));
+  }
+  if (packet && packet->is_first_packet_of_frame()) {
+    RTC_LOG(LS_INFO) << "Pacer push frame:" << packet->SequenceNumber() << ":" << rtc::TimeMillis() << " current queue size: " << packet_queue_.SizeInPackets();
   }
   packet_queue_.Push(now, std::move(packet));
   seen_first_packet_ = true;

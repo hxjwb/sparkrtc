@@ -1455,6 +1455,7 @@ bool WebRtcVideoSendChannel::AddSendStream(const StreamParams& sp) {
   config.rtp.enable_send_packet_batching =
       video_config_.enable_send_packet_batching;
 
+  RTC_LOG(LS_INFO) << "mhhh WebRtcVideoSendChannel::AddSendStream Create WebRtcVideoSendStream";
   WebRtcVideoSendStream* stream = new WebRtcVideoSendStream(
       call_, sp, std::move(config), default_send_options_,
       video_config_.enable_cpu_adaptation, bitrate_config_.max_bitrate_bps,
@@ -1471,6 +1472,7 @@ bool WebRtcVideoSendChannel::AddSendStream(const StreamParams& sp) {
   if (sending_) {
     stream->SetSend(true);
   }
+  RTC_LOG(LS_INFO) << "mhhh finish AddSendStream";
 
   return true;
 }
@@ -1702,6 +1704,7 @@ WebRtcVideoSendChannel::WebRtcVideoSendStream::WebRtcVideoSendStream(
       sending_(false),
       disable_automatic_resize_(
           IsEnabled(call->trials(), "WebRTC-Video-DisableAutomaticResize")) {
+  RTC_LOG(LS_INFO) << "WebRtcVideoSendStream::WebRtcVideoSendStream Start";
   // Maximum packet size may come in RtpConfig from external transport, for
   // example from QuicTransportInterface implementation, so do not exceed
   // given max_packet_size.
@@ -1756,6 +1759,7 @@ WebRtcVideoSendChannel::WebRtcVideoSendStream::WebRtcVideoSendStream(
   rtp_parameters_.rtcp.reduced_size = send_params.rtcp.reduced_size;
 
   if (codec_settings) {
+    RTC_LOG(LS_INFO) << "mhhh WebRtcVideoSendStream::WebRtcVideoSendStream call SetCodec";
     SetCodec(*codec_settings);
   }
 }
@@ -1769,6 +1773,7 @@ WebRtcVideoSendChannel::WebRtcVideoSendStream::~WebRtcVideoSendStream() {
 bool WebRtcVideoSendChannel::WebRtcVideoSendStream::SetVideoSend(
     const VideoOptions* options,
     rtc::VideoSourceInterface<webrtc::VideoFrame>* source) {
+      RTC_LOG(LS_INFO) << "mhhh WebRtcVideoSendChannel::WebRtcVideoSendStream::SetVideoSend";
   TRACE_EVENT0("webrtc", "WebRtcVideoSendStream::SetVideoSend");
   RTC_DCHECK_RUN_ON(&thread_checker_);
 
@@ -1888,6 +1893,7 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::SetCodec(
   // TODO(bugs.webrtc.org/8830): Avoid recreation, it should be enough to call
   // ReconfigureEncoder.
   RTC_LOG(LS_INFO) << "RecreateWebRtcStream (send) because of SetCodec.";
+  RTC_LOG(LS_INFO) << "mhhh test6";
   RecreateWebRtcStream();
 }
 
@@ -1935,6 +1941,7 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::SetSenderParameters(
   if (recreate_stream) {
     RTC_LOG(LS_INFO)
         << "RecreateWebRtcStream (send) because of SetSenderParameters";
+    RTC_LOG(LS_INFO) << "mhhh test5";
     RecreateWebRtcStream();
   }
 }
@@ -2048,6 +2055,7 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::SetFrameEncryptor(
     RTC_LOG(LS_INFO)
         << "RecreateWebRtcStream (send) because of SetFrameEncryptor, ssrc="
         << parameters_.config.rtp.ssrcs[0];
+    RTC_LOG(LS_INFO) << "mhhh test4";
     RecreateWebRtcStream();
   }
 }
@@ -2060,12 +2068,14 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::SetEncoderSelector(
     RTC_LOG(LS_INFO)
         << "RecreateWebRtcStream (send) because of SetEncoderSelector, ssrc="
         << parameters_.config.rtp.ssrcs[0];
+    RTC_LOG(LS_INFO) << "mhhh test3";
     RecreateWebRtcStream();
   }
 }
 
 void WebRtcVideoSendChannel::WebRtcVideoSendStream::UpdateSendState() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
+  RTC_LOG(LS_INFO) << "mhhh UpdateSendState sending_:" << sending_;
   if (sending_) {
     RTC_DCHECK(stream_ != nullptr);
     size_t num_layers = rtp_parameters_.encodings.size();
@@ -2262,6 +2272,7 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::ReconfigureEncoder(
   parameters_.encoder_config = std::move(encoder_config);
 
   if (num_streams_changed) {
+    RTC_LOG(LS_INFO) << "mhhh test2";
     // The app is switching between legacy and standard modes, recreate instead
     // of reconfiguring to avoid number of streams not matching in lower layers.
     RecreateWebRtcStream();
@@ -2478,11 +2489,14 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::
             frame_transformer) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   parameters_.config.frame_transformer = std::move(frame_transformer);
-  if (stream_)
+  if (stream_) {
+    RTC_LOG(LS_INFO) << "mhhh test1";
     RecreateWebRtcStream();
+  }
 }
 
 void WebRtcVideoSendChannel::WebRtcVideoSendStream::RecreateWebRtcStream() {
+  RTC_LOG(LS_INFO) << "mhhh WebRtcVideoSendStream::RecreateWebRtcStream";
   RTC_DCHECK_RUN_ON(&thread_checker_);
   if (stream_ != NULL) {
     call_->DestroyVideoSendStream(stream_);
@@ -2511,6 +2525,7 @@ void WebRtcVideoSendChannel::WebRtcVideoSendStream::RecreateWebRtcStream() {
       }
     }
   }
+  RTC_LOG(LS_INFO) << "mhhh stream_ = call_->CreateVideoSendStream";
   stream_ = call_->CreateVideoSendStream(std::move(config),
                                          parameters_.encoder_config.Copy());
 

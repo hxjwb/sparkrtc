@@ -410,6 +410,7 @@ void BitrateAllocator::OnNetworkEstimateChanged(TargetTransferRate msg) {
     update.round_trip_time = TimeDelta::Millis(last_rtt_);
     update.bwe_period = TimeDelta::Millis(last_bwe_period_ms_);
     update.cwnd_reduce_ratio = msg.cwnd_reduce_ratio;
+    RTC_LOG(LS_INFO) << "mhhh BitrateAllocator::OnNetworkEstimateChanged update bitrate";
     uint32_t protection_bitrate = config.observer->OnBitrateUpdated(update);
 
     if (allocated_bitrate == 0 && config.allocated_bitrate_bps > 0) {

@@ -659,6 +659,7 @@ void GoogCcNetworkController::MaybeTriggerOnNetworkChanged(
       cwnd_reduce_ratio = static_cast<double>(loss_based_target_rate.bps() -
                                               pushback_target_rate.bps()) /
                           loss_based_target_rate.bps();
+      RTC_LOG(LS_INFO) << "mhhh GoogCcNetworkController::MaybeTriggerOnNetworkChanged cwnd_reduce_ratio:" << cwnd_reduce_ratio;
     }
   }
   DataRate stable_target_rate =

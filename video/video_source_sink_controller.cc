@@ -44,6 +44,7 @@ void VideoSourceSinkController::SetSource(
   if (!source)
     return;
 
+  RTC_LOG(LS_INFO) << "mhhh addsink VideoSourceSinkController::SetSource";
   source->AddOrUpdateSink(sink_, CurrentSettingsToSinkWants());
 }
 

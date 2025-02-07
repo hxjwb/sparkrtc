@@ -190,7 +190,8 @@ uint32_t GetInitialEncoderMaxBitrate(int initial_encoder_max_bitrate) {
   // behaviour that is not safe. Converting to 10 Mbps should be safe for
   // reasonable use cases as it allows adding the max of multiple streams
   // without wrappping around.
-  const int kFallbackMaxBitrateBps = 10000000;
+  int scale = 5;
+  const int kFallbackMaxBitrateBps = 10000000 * scale;
   RTC_DLOG(LS_ERROR) << "ERROR: Initial encoder max bitrate = "
                      << initial_encoder_max_bitrate << " which is <= 0!";
   RTC_DLOG(LS_INFO) << "Using default encoder max bitrate = 10 Mbps";
@@ -532,6 +533,7 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
 EncodedImageCallback::Result VideoSendStreamImpl::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
+  RTC_LOG(LS_INFO) << "mhhh VideoSendStreamImpl::OnEncodedImage";
   // Encoded is called on whatever thread the real encoder implementation run
   // on. In the case of hardware encoders, there might be several encoders
   // running in parallel on different threads.

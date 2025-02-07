@@ -187,6 +187,7 @@ void RTPSenderVideo::LogAndSendToNetwork(
           packetized_payload_size - encoder_output_size, clock_->CurrentTime());
     }
   }
+  RTC_LOG(LS_INFO) << "mhhh LogAndSendToNetwork packets:" << packets.size();
 
   rtp_sender_->EnqueuePackets(std::move(packets));
 }
@@ -464,6 +465,7 @@ bool RTPSenderVideo::SendVideo(int payload_type,
                                RTPVideoHeader video_header,
                                TimeDelta expected_retransmission_time,
                                std::vector<uint32_t> csrcs) {
+  RTC_LOG(LS_INFO) << "mhhh RTPSenderVideo::SendVideo";
   TRACE_EVENT_ASYNC_STEP1(
       "webrtc", "Video", capture_time.ms_or(0), "Send", "type",
       std::string(VideoFrameTypeToString(video_header.frame_type)));
@@ -646,6 +648,7 @@ bool RTPSenderVideo::SendVideo(int payload_type,
       RtpPacketizer::Create(codec_type, payload, limits, video_header);
 
   const size_t num_packets = packetizer->NumPackets();
+  RTC_LOG(LS_INFO) << "mhhh SendVideo packet number: " << num_packets;
 
   if (num_packets == 0)
     return false;

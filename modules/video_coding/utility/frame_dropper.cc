@@ -11,6 +11,7 @@
 #include "modules/video_coding/utility/frame_dropper.h"
 
 #include <algorithm>
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -79,11 +80,14 @@ void FrameDropper::Enable(bool enable) {
 
 void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
   if (!enabled_) {
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::Fill not enabled";
     return;
   }
   float framesize_kbits = 8.0f * static_cast<float>(framesize_bytes) / 1000.0f;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::Fill framesize_kbits:" << framesize_kbits << " framesize_bytes:" << framesize_bytes << " is delta_frame:" << delta_frame;
   if (!delta_frame) {
     key_frame_ratio_.Apply(1.0, 1.0);
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::Fill After appliy (1, 1) key_frame_ratio:" << key_frame_ratio_.filtered();
     // Do not spread if we are already doing it (or we risk dropping bits that
     // need accumulation). Given we compute the key frame ratio and spread
     // based on that, this should not normally happen.
@@ -116,9 +120,11 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
       delta_frame_size_avg_kbits_.Apply(1, framesize_kbits);
     }
     key_frame_ratio_.Apply(1.0, 0.0);
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::Fill After appliy (1, 0) key_frame_ratio:" << key_frame_ratio_.filtered();
   }
   // Change the level of the accumulator (bucket)
   accumulator_ += framesize_kbits;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::Fill accumulator_:" << accumulator_;
   CapAccumulator();
 }
 
@@ -136,10 +142,13 @@ void FrameDropper::Leak(uint32_t input_framerate) {
   large_frame_accumulation_spread_ = std::max(0.5 * input_framerate, 5.0);
   // Expected bits per frame based on current input frame rate.
   float expected_bits_per_frame = target_bitrate_ / input_framerate;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::Leak expected_bits_per_frame:" << expected_bits_per_frame;
   if (large_frame_accumulation_count_ > 0) {
     expected_bits_per_frame -= large_frame_accumulation_chunk_size_;
     --large_frame_accumulation_count_;
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::Leak expected_bits_per_frame:" << expected_bits_per_frame << " minus:" << large_frame_accumulation_chunk_size_ << " large_frame_accumulation_count_:" << large_frame_accumulation_count_;
   }
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::Leak accumulator_:" << accumulator_ << "after -:" << accumulator_ - expected_bits_per_frame;
   accumulator_ -= expected_bits_per_frame;
   if (accumulator_ < 0.0f) {
     accumulator_ = 0.0f;
@@ -167,6 +176,7 @@ void FrameDropper::UpdateRatio() {
     drop_ratio_.Apply(1.0f, 0.0f);
   }
   was_below_max_ = accumulator_ < accumulator_max_;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::UpdateRatio drop_ratio:" << drop_ratio_.filtered() << " accumulator_:" << accumulator_ << " accumulator_max_:" << accumulator_max_ << " drop_next_:" << drop_next_;
 }
 
 // This function signals when to drop frames to the caller. It makes use of the
@@ -192,6 +202,7 @@ bool FrameDropper::DropFrame() {
     // frame, in terms of frame rate and window size (secs).
     int max_limit =
         static_cast<int>(incoming_frame_rate_ * max_drop_duration_secs_);
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() drop_count_:" << drop_count_ << " drop_ratio_:" << drop_ratio_.filtered() << " denom:" << denom << " limit:" << limit << " max_limit:" << max_limit;
     if (limit > max_limit) {
       limit = max_limit;
     }
@@ -202,10 +213,12 @@ bool FrameDropper::DropFrame() {
     if (drop_count_ < limit) {
       // As long we are below the limit we should drop frames.
       drop_count_++;
+      RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return true1";
       return true;
     } else {
       // Only when we reset drop_count_ a frame should be kept.
       drop_count_ = 0;
+      RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return false1 reset drop_count_ to 0";
       return false;
     }
   } else if (drop_ratio_.filtered() > 0.0f &&
@@ -218,6 +231,7 @@ bool FrameDropper::DropFrame() {
       denom = 1e-5f;
     }
     int32_t limit = -static_cast<int32_t>(1.0f / denom - 1.0f + 0.5f);
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() drop_count_:" << drop_count_ << " drop_ratio_:" << drop_ratio_.filtered() << " denom:" << denom << " limit:" << limit;
     if (drop_count_ > 0) {
       // Reset the drop_count_ since we have a positive
       // drop_count_, and it should be negative.
@@ -227,26 +241,32 @@ bool FrameDropper::DropFrame() {
       if (drop_count_ == 0) {
         // Drop frames when we reset drop_count_.
         drop_count_--;
+        RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return true2 drop_count_:" << drop_count_;
         return true;
       } else {
         // Keep frames as long as we haven't reached limit.
         drop_count_--;
+        RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return false2 drop_count_:" << drop_count_;
         return false;
       }
     } else {
       drop_count_ = 0;
+      RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return false2 drop_count_:" << drop_count_;
       return false;
     }
   }
   drop_count_ = 0;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::DropFrame() return false3 drop_count_:" << drop_count_;
   return false;
 }
 
 void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
   // Bit rate of -1 means infinite bandwidth.
   accumulator_max_ = bitrate * kLeakyBucketSizeSeconds;
+  RTC_LOG(LS_INFO) << "mhhh FrameDropper::SetRates bitrate:" << bitrate << " incoming_frame_rate:" << incoming_frame_rate << " accumulator_max_:" << accumulator_max_;
   if (target_bitrate_ > 0.0f && bitrate < target_bitrate_ &&
       accumulator_ > accumulator_max_) {
+      RTC_LOG(LS_INFO) << "mhhh FrameDropper::SetRates target_bitrate_:" << target_bitrate_ << " accumulator_:" << accumulator_ << " accumulator_max_:" << accumulator_max_ << " new_accumulator:" << bitrate / target_bitrate_ * accumulator_;
     // Rescale the accumulator level if the accumulator max decreases
     accumulator_ = bitrate / target_bitrate_ * accumulator_;
   }
@@ -262,6 +282,7 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 void FrameDropper::CapAccumulator() {
   float max_accumulator = target_bitrate_ * kAccumulatorCapBufferSizeSecs;
   if (accumulator_ > max_accumulator) {
+    RTC_LOG(LS_INFO) << "mhhh FrameDropper::CapAccumulator() update accumulator_:" << accumulator_ << " to max_accumulator " << max_accumulator;
     accumulator_ = max_accumulator;
   }
 }

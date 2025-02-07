@@ -67,7 +67,7 @@ class FakeMainWnd : public MainWindow {
     // VideoSinkInterface implementation
     void OnFrame(const webrtc::VideoFrame& frame) override;
 
-    const uint8_t* image() const { return image_.get(); }
+    const uint8_t* image() const { RTC_LOG(LS_INFO) << "mhhh VideoRenderer::image()"; return image_.get(); }
 
     int width() const { return width_; }
 
