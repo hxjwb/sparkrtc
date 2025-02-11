@@ -14,7 +14,7 @@
 // #ifdef unless needed and tested.
 // #ifdef WEBRTC_USE_H264
 #define PRESET 1
-#define VBV 4
+// #define VBV 4
 #define CBR 0
 #include "modules/video_coding/codecs/h264/x264_encoder_impl.h"
 
@@ -33,6 +33,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
+#include "rtc_base/ace.h"
 #include "system_wrappers/include/metrics.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
