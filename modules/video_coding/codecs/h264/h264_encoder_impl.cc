@@ -48,8 +48,8 @@ namespace {
 // const bool kOpenH264EncoderDetailedLogging = false;
 
 // QP scaling thresholds.
-static const int kLowH264QpThreshold = 24;
-static const int kHighH264QpThreshold = 37;
+static const int kLowH264QpThreshold = 26;
+static const int kHighH264QpThreshold = 35;
 
 // Used by histograms. Values of entries should not be changed.
 enum H264EncoderImplEvent {
@@ -226,7 +226,6 @@ H264EncoderImpl::~H264EncoderImpl() {
   Release();
 }
 
-int scale = 1;
 int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
                                     const VideoEncoder::Settings& settings) {
   ReportInit();
@@ -273,11 +272,11 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   // Code expects simulcastStream resolutions to be correct, make sure they are
   // filled even when there are no simulcast layers.
   if (codec_.numberOfSimulcastStreams == 0) {
-    codec_.simulcastStream[0].width = codec_.width / scale;
-    codec_.simulcastStream[0].height = codec_.height / scale;
+    codec_.simulcastStream[0].width = codec_.width;
+    codec_.simulcastStream[0].height = codec_.height;
   } else {
-    codec_.simulcastStream[0].width = codec_.width / scale;
-    codec_.simulcastStream[0].height = codec_.height / scale;
+    codec_.simulcastStream[0].width = codec_.width;
+    codec_.simulcastStream[0].height = codec_.height;
   }
 
   for (int i = 0, idx = number_of_streams - 1; i < number_of_streams;
@@ -294,7 +293,7 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   
   memset(&param_, 0, sizeof(param_));
   x264_param_default(&param_);
-  int ret_val = x264_param_default_preset(&param_, "ultrafast", "zerolatency");
+  int ret_val = x264_param_default_preset(&param_, "superfast", "zerolatency");
   if (ret_val != 0) {
     RTC_LOG(LS_ERROR)
         << "H264EncoderImpl::InitEncode() fails to initialize encoder ret_val "
@@ -307,15 +306,17 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   int bitrate_kbps = 3000;
 
   param_.i_threads = 1;
-  param_.i_width = inst->width / scale;
-  param_.i_height = inst->height / scale;
+  param_.i_width = inst->width;
+  param_.i_height = inst->height;
   param_.i_frame_total = 0;  
   param_.i_keyint_max = 1500;
   param_.rc.i_rc_method = X264_RC_ABR;
   // param_.rc.i_rc_method = X264_RC_CRF;
   // param_.rc.f_rf_constant = 23;
-  param_.rc.i_vbv_max_bitrate = 0;//bitrate_kbps;
-  param_.rc.i_vbv_buffer_size = 0;//bitrate_kbps;
+  param_.rc.i_vbv_max_bitrate = bitrate_kbps;
+  param_.rc.i_vbv_buffer_size = bitrate_kbps;
+  param_.rc.i_qp_min = kLowH264QpThreshold;
+  param_.rc.i_qp_max = kHighH264QpThreshold;
   // param_.i_bframe = 0;
   // param_.b_open_gop = 0;
   // param_.i_bframe_pyramid = 0;
@@ -511,9 +512,9 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
 
     if (configurations_[i].target_bps) {
       int bitrate_kbps = configurations_[i].target_bps / 1000;
-      int vbv_size = parameters.framerate_fps;
       // ************************************
-      bool enable_vbv = false;
+      bool enable_vbv = true;
+      // int vbv_size = parameters.framerate_fps;
       // ************************************
       configurations_[i].SetStreamState(true);
       // if (bitrate_kbps < 2000) {
@@ -524,12 +525,11 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
       //   // param_.rc.i_vbv_max_bitrate = 8000;
       // }
       param_.rc.i_bitrate = bitrate_kbps;
+      float scale = 1;
       if (set_rate_count > 5) {
         if (enable_vbv) {
-          param_.rc.i_vbv_buffer_size = bitrate_kbps * vbv_size / parameters.framerate_fps;
-          param_.rc.i_vbv_max_bitrate = bitrate_kbps;
-        } else {
-          vbv_size = 0;
+          param_.rc.i_vbv_buffer_size = bitrate_kbps * scale;// * vbv_size / parameters.framerate_fps;
+          param_.rc.i_vbv_max_bitrate = bitrate_kbps * scale;
         }
       }
       set_rate_count++;
@@ -566,7 +566,7 @@ int32_t H264EncoderImpl::Encode(
   rtc::scoped_refptr<I420BufferInterface> frame_buffer =
       input_frame.video_frame_buffer()->ToI420();
   if (frame_buffer) {
-    frame_buffer = frame_buffer->Scale(input_frame.width() / scale, input_frame.height() / scale)->ToI420();
+    frame_buffer = frame_buffer->Scale(input_frame.width(), input_frame.height())->ToI420();
   }
   if (!frame_buffer) {
     RTC_LOG(LS_ERROR) << "Failed to convert "
@@ -683,6 +683,7 @@ int32_t H264EncoderImpl::Encode(
       h264_bitstream_parser_.ParseBitstream(encoded_images_[i]);
       encoded_images_[i].qp_ =
           h264_bitstream_parser_.GetLastSliceQp().value_or(-1);
+      RTC_LOG(LS_INFO) << "mhhh Encode frame qp: " << encoded_images_[i].qp_;
 
       // Deliver encoded image.
       CodecSpecificInfo codec_specific;
