@@ -16,8 +16,6 @@
 #include <memory>
 #include <numeric>
 #include <utility>
-#include <chrono>
-#include <ctime>
 
 #include "absl/algorithm/container.h"
 #include "absl/cleanup/cleanup.h"
@@ -1741,17 +1739,10 @@ void VideoStreamEncoder::SetEncoderRates(
     return;
 
   if (rate_control_changed) {
-    RTC_LOG(LS_INFO) << "mhhh VideoStreamEncoder::SetEncoderRates: " << rate_settings.rate_control.bitrate.GetSpatialLayerSum(0);
-    auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    int bitrate = rate_settings.rate_control.bitrate.GetSpatialLayerSum(0) / 1000;
-    // if (bitrate < 3000) {
-    //   bitrate = 1000;
-    // } else {
-    //   bitrate = 8000;
-    // }
+    int bitrate_kbps = rate_settings.rate_control.bitrate.GetSpatialLayerSum(0) / 1000;
     RTC_LOG(LS_INFO) << "Send Statistics SetRates, stream 0 target_bitrate "
-                       << bitrate << " framerate "
-                       << rate_settings.rate_control.framerate_fps << " current time: " << current_time;
+                      << bitrate_kbps << " framerate "
+                      << rate_settings.rate_control.framerate_fps << " current time: " << rtc::TimeMillis();
     encoder_->SetRates(rate_settings.rate_control);
 
     encoder_stats_observer_->OnBitrateAllocationUpdated(
@@ -2483,9 +2474,7 @@ void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
 
   if (!frame_size.IsZero()) {
     frame_dropper_.Fill(frame_size.bytes(), !keyframe);
-    RTC_LOG(LS_INFO) << "VideoStreamEncoder::RunPostEncode frame_size: " << frame_size.bytes() << " is_key_frame: " << keyframe;
-    auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    RTC_LOG(LS_INFO) << "Send Statistics Send Frame Size: " << frame_size.bytes() << " current time: " << current_time;
+    RTC_LOG(LS_INFO) << "Send Statistics Send Frame Size: " << frame_size.bytes() << " current time: " << rtc::TimeMillis();
   }
 
   stream_resource_manager_.OnEncodeCompleted(encoded_image, time_sent_us,
