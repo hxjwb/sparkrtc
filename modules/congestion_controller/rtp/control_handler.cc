@@ -67,8 +67,13 @@ absl::optional<TargetTransferRate> CongestionControlHandler::GetUpdate() {
                  PacingController::kMaxExpectedQueueLength.ms()) {
     pause_encoding = true;
   }
-  if (pause_encoding)
+  if (pause_encoding) {
     new_outgoing.target_rate = DataRate::Zero();
+    RTC_LOG(LS_INFO) << "mhhh_bitrate CongestionControlHandler::GetUpdate() pause_encoding";
+  }
+  if (last_reported_) {
+    RTC_LOG(LS_INFO) << "mhhh_bitrate CongestionControlHandler::GetUpdate() last_reported_->target_rate: " << last_reported_->target_rate.bps() << " new_outgoing.target_rate: " << new_outgoing.target_rate.bps() << " last_reported_->network_estimate.loss_rate_ratio: " << last_reported_->network_estimate.loss_rate_ratio << " new_outgoing.network_estimate.loss_rate_ratio: " << new_outgoing.network_estimate.loss_rate_ratio << " last_reported_->network_estimate.round_trip_time: " << last_reported_->network_estimate.round_trip_time.ms() << " new_outgoing.network_estimate.round_trip_time: " << new_outgoing.network_estimate.round_trip_time.ms();
+  }
   if (!last_reported_ ||
       last_reported_->target_rate != new_outgoing.target_rate ||
       (!new_outgoing.target_rate.IsZero() &&
