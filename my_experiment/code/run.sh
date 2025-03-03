@@ -49,9 +49,13 @@ if [ $run_program == "gen_send_video" ]; then
 	python3 process_video_qrcode.py --option=gen_send_video --data=$video_name --height=$height --width=$width
 fi
 
-vbv_ratios=(0.3 0.5 1.0 1.5 2.0 3.0 10.0)
-minQP=(2 10 15 20 25)
-maxQP=(51 45 40 35 35)
+# vbv_ratios=(0.3 0.5 1.0 1.5 2.0 3.0 10.0)
+# minQP=(2 10 15 20 26)
+# maxQP=(51 45 40 35 35)
+
+vbv_ratios=(0.03 0.06 0.1 0.2 0.4 0.6 0.8 1.2 1.4 1.6 4.0 5.0 6.0 7.0 8.0 9.0 15.0 20.0 30.0)
+minQP=(10)
+maxQP=(45)
 
 length=${#minQP[@]}
 
@@ -63,7 +67,7 @@ do
 		do
 			filename=$(basename -- "$file")
 			filename="${filename%.*}"
-			# filename="static_1mbps"
+			filename="static_1mbps"
 			# # filename="10s_10to1mbps"
 			# filename="10s_10to1_until_300s"
 
@@ -73,12 +77,15 @@ do
 			while [ $converged == 0 ]
 			do
 				output_dir="${filename}/x264_${vbv_ratio}_${minQP[i]}_${maxQP[i]}_${times}"
+				output_dir="${filename}/a_vbv_7_${times}"
+				vbv_ratio=7
 				times=$((times+1))
 				echo "$output_dir"
 				if [ $run_program == "all" ] || [ $run_program == "send_and_recv" ]; then
 					python3 process_video_qrcode.py --option=send_and_recv --data=$video_name --minQP=${minQP[i]}\
 					--maxQP=${maxQP[i]} --vbvRatio=${vbv_ratio} --height=$height --width=$width  --output_dir=${output_dir}
 					converged=$?
+					# converged=1
 					echo "The return value is: $converged"
 					pid=$!
 					wait $pid
@@ -95,7 +102,9 @@ do
 				exit 0
 			done
 			rm "../last_average_record.log"
-			# exit 0
+			exit 0
 		done
+		find ../result -name 'recon.yuv' -delete
 	done
+	# exit 0
 done

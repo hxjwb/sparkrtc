@@ -632,6 +632,10 @@ def output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, ps
     converged = False
     if abs(new_trails_avg_head_psnr - last_trails_avg_head_psnr) < 0.01 and abs(new_trails_avg_head_psnr_consider_drop - last_trails_avg_head_psnr_consider_drop) < 0.01 and abs(new_trails_avg_tail_delay - last_trails_avg_tail_delay) < 0.5:
         converged = True
+    if converged:
+        f_parameter_record_file = open("../parameter_result.log", "a")
+        f_parameter_record_file.write(prefix + ',' + str(new_trails_count) + ',' + str(new_trails_avg_psnr) + ',' + str(new_trails_avg_psnr_consider_drop) + ',' + str(new_trails_avg_delay) + ',' + str(new_trails_avg_head_psnr) + ',' + str(new_trails_avg_head_psnr_consider_drop) + ',' + str(new_trails_avg_tail_delay) + '\n')
+
     return converged
 
 

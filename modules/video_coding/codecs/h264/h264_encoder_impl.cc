@@ -49,8 +49,8 @@ namespace {
 // const bool kOpenH264EncoderDetailedLogging = false;
 
 // QP scaling thresholds.
-static const int kLowH264QpThreshold = 26;
-static const int kHighH264QpThreshold = 35;
+// static const int kLowH264QpThreshold = 26;
+// static const int kHighH264QpThreshold = 35;
 
 // Used by histograms. Values of entries should not be changed.
 enum H264EncoderImplEvent {
@@ -207,7 +207,6 @@ H264EncoderImpl::H264EncoderImpl(const cricket::VideoCodec& codec)
       encoded_image_callback_(nullptr),
       has_reported_init_(false),
       has_reported_error_(false) {
-        RTC_LOG(LS_INFO) << "mhhh Final!! H264EncoderImpl::H264EncoderImpl";
   RTC_CHECK(absl::EqualsIgnoreCase(codec.name, cricket::kH264CodecName));
   std::string packetization_mode_string;
   if (codec.GetParam(cricket::kH264FmtpPacketizationMode,
@@ -229,7 +228,7 @@ H264EncoderImpl::~H264EncoderImpl() {
 
 int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
                                     const VideoEncoder::Settings& settings) {
-  RTC_LOG(LS_INFO) << "mhhh InitEncode minQP:" << rtc::GetMinQP() << " maxQP:" << rtc::GetMaxQP() << " vbvBufferRatio:" << rtc::GetVBVBufferRatio();
+  RTC_LOG(LS_INFO) << "mhhh InitEncode minQP:" << rtc::GetMinQP() << " maxQP:" << rtc::GetMaxQP() << " vbvBufferRatio:" << rtc::GetVBVBufferRatio() << " startbitrate:" << 3000;
   ReportInit();
   if (!inst || inst->codecType != kVideoCodecH264) {
     ReportError();
@@ -317,8 +316,8 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   // param_.rc.f_rf_constant = 23;
   param_.rc.i_vbv_max_bitrate = bitrate_kbps;
   param_.rc.i_vbv_buffer_size = bitrate_kbps;
-  param_.rc.i_qp_min = kLowH264QpThreshold;
-  param_.rc.i_qp_max = kHighH264QpThreshold;
+  param_.rc.i_qp_min = rtc::GetMinQP();
+  param_.rc.i_qp_max = rtc::GetMaxQP();
   // param_.i_bframe = 0;
   // param_.b_open_gop = 0;
   // param_.i_bframe_pyramid = 0;
@@ -482,7 +481,6 @@ int32_t H264EncoderImpl::RegisterEncodeCompleteCallback(
 
 static int set_rate_count = 0;
 void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
-  RTC_LOG(LS_INFO) << "*************** SetRates ************************";
   if (encoder_ == NULL) {
     RTC_LOG(LS_WARNING) << "SetRates() while uninitialized.";
     return;
@@ -506,33 +504,16 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
   //   size_t stream_idx = encoders_.size() - 1;
   for (size_t i = 0; i < 1; ++i) {
     // Update layer config.
-    // RTC_LOG(LS_INFO) << "SetRates, stream " << i << " target_bitrate "
-    //                  << parameters.bitrate.GetSpatialLayerSum(0)
-    //                  << " framerate " << parameters.framerate_fps;
     configurations_[i].target_bps = parameters.bitrate.GetSpatialLayerSum(0);
     configurations_[i].max_frame_rate = parameters.framerate_fps;
 
     if (configurations_[i].target_bps) {
       int bitrate_kbps = configurations_[i].target_bps / 1000;
-      // ************************************
-      bool enable_vbv = true;
-      // int vbv_size = parameters.framerate_fps;
-      // ************************************
       configurations_[i].SetStreamState(true);
-      // if (bitrate_kbps < 2000) {
-      //   param_.rc.i_bitrate = 1000;
-      //   // param_.rc.i_vbv_max_bitrate = 1000;
-      // } else {
-      //   param_.rc.i_bitrate = 8000;
-      //   // param_.rc.i_vbv_max_bitrate = 8000;
-      // }
       param_.rc.i_bitrate = bitrate_kbps;
-      float scale = 1;
       if (set_rate_count > 5) {
-        if (enable_vbv) {
-          param_.rc.i_vbv_buffer_size = bitrate_kbps * scale;// * vbv_size / parameters.framerate_fps;
-          param_.rc.i_vbv_max_bitrate = bitrate_kbps * scale;
-        }
+        param_.rc.i_vbv_buffer_size = bitrate_kbps * rtc::GetVBVBufferRatio();
+        param_.rc.i_vbv_max_bitrate = bitrate_kbps * rtc::GetVBVBufferRatio();
       }
       set_rate_count++;
       param_.i_fps_num = static_cast<int>(parameters.framerate_fps);
@@ -660,8 +641,6 @@ int32_t H264EncoderImpl::Encode(
       return WEBRTC_VIDEO_CODEC_ERROR;
     }
 
-    RTC_LOG(LS_INFO) << "Statistics Frame Size: " << i_frame_size;
-
     RtpFragmentize(&encoded_images_[i], nal_t_, n_nal);
     
     encoded_images_[i]._encodedWidth = configurations_[i].width;
@@ -753,7 +732,7 @@ VideoEncoder::EncoderInfo H264EncoderImpl::GetEncoderInfo() const {
   info.supports_native_handle = false;
   info.implementation_name = "OpenH264";
   info.scaling_settings =
-      VideoEncoder::ScalingSettings(kLowH264QpThreshold, kHighH264QpThreshold);
+      VideoEncoder::ScalingSettings(rtc::GetMinQP(), rtc::GetMaxQP());
   info.is_hardware_accelerated = false;
   info.supports_simulcast = true;
   info.preferred_pixel_formats = {VideoFrameBuffer::Type::kI420};
