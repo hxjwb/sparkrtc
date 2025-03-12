@@ -54,6 +54,8 @@ fi
 # maxQP=(51 45 40 35 35)
 
 vbv_ratios=(0.03 0.06 0.1 0.2 0.4 0.6 0.8 1.2 1.4 1.6 4.0 5.0 6.0 7.0 8.0 9.0 15.0 20.0 30.0)
+# encoder_coefficients=(-0.5 -0.2 -0.1 -0.06 0 0.03 0.06 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 2.0)
+encoder_coefficients=(0.9 1.0 2.0)
 minQP=(10)
 maxQP=(45)
 
@@ -61,14 +63,14 @@ length=${#minQP[@]}
 
 for file in $(find ${trace_logs_dir} -maxdepth 1 -type f)
 do
-	for vbv_ratio in ${vbv_ratios[@]}
+	for encoder_coefficient in ${encoder_coefficients[@]}
 	do
 		for ((i=0; i<length; i++))
 		do
 			filename=$(basename -- "$file")
 			filename="${filename%.*}"
-			filename="static_1mbps"
-			# # filename="10s_10to1mbps"
+			filename="static_5mbps"
+			# filename="10s_10to1mbps"
 			# filename="10s_10to1_until_300s"
 
 			converged=0
@@ -76,14 +78,17 @@ do
 
 			while [ $converged == 0 ]
 			do
-				output_dir="${filename}/x264_${vbv_ratio}_${minQP[i]}_${maxQP[i]}_${times}"
-				output_dir="${filename}/a_vbv_7_${times}"
-				vbv_ratio=7
+				vbv_ratio=1.0
+				output_dir="${filename}/x264_${encoder_coefficient}_${minQP[i]}_${maxQP[i]}_${times}"
+				# output_dir="${filename}/x264_drop_${encoder_coefficient}_${times}"
+				# output_dir="${filename}/a_vbv_${vbv_ratio}_1"
 				times=$((times+1))
 				echo "$output_dir"
 				if [ $run_program == "all" ] || [ $run_program == "send_and_recv" ]; then
 					python3 process_video_qrcode.py --option=send_and_recv --data=$video_name --minQP=${minQP[i]}\
-					--maxQP=${maxQP[i]} --vbvRatio=${vbv_ratio} --height=$height --width=$width  --output_dir=${output_dir}
+					--maxQP=${maxQP[i]} --vbvRatio=${vbv_ratio} --encoderAddCoefficient=${encoder_coefficient}\
+					--encoderReduceCoefficient=0\
+					--height=$height --width=$width  --output_dir=${output_dir}
 					converged=$?
 					# converged=1
 					echo "The return value is: $converged"
@@ -99,12 +104,12 @@ do
 				if [ $run_program == "all" ] || [ $run_program == "show_fig" ]; then
 					python3 process_video_qrcode.py --option=show_fig --data=$video_name  --output_dir=${output_dir}
 				fi
-				exit 0
+				# exit 0
 			done
 			rm "../last_average_record.log"
-			exit 0
+			# exit 0
 		done
 		find ../result -name 'recon.yuv' -delete
 	done
-	# exit 0
+	exit 0
 done

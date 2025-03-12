@@ -89,9 +89,17 @@ double GetNextMovingAverage(double prev_average, double cur, double ratio);
 
 void SetVBVBufferRatio(double ratio);
 
+void SetEncoderAddCoefficient(double coefficient);
+
+void SetEncoderReduceCoefficient(double coefficient);
+
 void SetQPBounds(int min_qp, int max_qp);
 
 double GetVBVBufferRatio();
+
+double GetEncoderAddCoefficient();
+
+double GetEncoderReduceCoefficient();
 
 int GetMinQP();
 

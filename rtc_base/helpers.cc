@@ -95,11 +95,21 @@ RandomGenerator& Rng() {
 }  // namespace
 
 static double g_vbv_buffer_ratio = 1.0;
+static double g_encoder_add_coefficient = 1.0;
+static double g_encoder_reduce_coefficient = 1.0;
 static int g_min_qp = 2;
 static int g_max_qp = 51;
 
 void SetVBVBufferRatio(double ratio) {
   g_vbv_buffer_ratio = ratio;
+}
+
+void SetEncoderAddCoefficient(double coefficient) {
+  g_encoder_add_coefficient = coefficient;
+}
+
+void SetEncoderReduceCoefficient(double coefficient) {
+  g_encoder_reduce_coefficient = coefficient;
 }
 
 void SetQPBounds(int min_qp, int max_qp) {
@@ -109,6 +119,14 @@ void SetQPBounds(int min_qp, int max_qp) {
 
 double GetVBVBufferRatio() {
   return g_vbv_buffer_ratio;
+}
+
+double GetEncoderAddCoefficient() {
+  return g_encoder_add_coefficient;
+}
+
+double GetEncoderReduceCoefficient() {
+  return g_encoder_reduce_coefficient;
 }
 
 int GetMinQP() {

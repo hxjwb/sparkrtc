@@ -305,6 +305,8 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   }
 
   int bitrate_kbps = 3000;
+  last_bitrate_ = bitrate_kbps;
+  last_drop_bitrate_ = 0;
 
   param_.i_threads = 1;
   param_.i_width = inst->width;
@@ -510,11 +512,35 @@ void H264EncoderImpl::SetRates(const RateControlParameters& parameters) {
     if (configurations_[i].target_bps) {
       int bitrate_kbps = configurations_[i].target_bps / 1000;
       configurations_[i].SetStreamState(true);
-      param_.rc.i_bitrate = bitrate_kbps;
-      if (set_rate_count > 5) {
-        param_.rc.i_vbv_buffer_size = bitrate_kbps * rtc::GetVBVBufferRatio();
-        param_.rc.i_vbv_max_bitrate = bitrate_kbps * rtc::GetVBVBufferRatio();
+
+      // Adjust encoder bitrate.
+      double add_coefficient = rtc::GetEncoderAddCoefficient();
+      double additional_ratio = add_coefficient * 1000.0 / bitrate_kbps;
+      param_.rc.i_bitrate = (1 + additional_ratio) * bitrate_kbps;
+
+      if (set_rate_count > 10) {
+        int drop_bitrate = bitrate_kbps - last_bitrate_;
+        double drop_ratio = 0;
+        double reduce_coefficient = rtc::GetEncoderReduceCoefficient();
+        RTC_LOG(LS_INFO) << "[Encoder] bitrate: " << bitrate_kbps << " i_bitrate: " << param_.rc.i_bitrate << " reduce_coefficient: " << reduce_coefficient << " drop_bitrate: " << drop_bitrate << " last_drop_bitrate: " << last_drop_bitrate_;
+        if (drop_bitrate < 0 || last_drop_bitrate_ < 0) {
+          // double reduce_coefficient = rtc::GetEncoderReduceCoefficient();
+          if (last_drop_bitrate_ < 0) {
+            drop_bitrate = (drop_bitrate + last_drop_bitrate_) / 2;
+          }
+          // drop_ratio = -reduce_coefficient * drop_bitrate / last_bitrate_;
+        }
+        param_.rc.i_bitrate = param_.rc.i_bitrate * (1 - drop_ratio);
+        param_.rc.i_vbv_buffer_size = param_.rc.i_bitrate * rtc::GetVBVBufferRatio() * (1 - drop_ratio * 2);
+        param_.rc.i_vbv_buffer_size = std::max(param_.rc.i_vbv_buffer_size, (int)(param_.rc.i_bitrate / param_.i_fps_num));
+        param_.rc.i_vbv_max_bitrate = param_.rc.i_bitrate;
+
+        RTC_LOG(LS_INFO) << "[Encoder] bitrate: drop_ratio: " << drop_ratio << " new_bitrate: " << param_.rc.i_bitrate << " new_vbv_buffer_size: " << param_.rc.i_vbv_buffer_size;
+        last_bitrate_ = bitrate_kbps;
+        last_drop_bitrate_ = drop_bitrate;
       }
+      RTC_LOG(LS_INFO) << "[Encoder] bitrate update original: " << bitrate_kbps << " new: " << param_.rc.i_bitrate << " add_coefficient: " << add_coefficient << " additional_ratio: " << additional_ratio;
+
       set_rate_count++;
       param_.i_fps_num = static_cast<int>(parameters.framerate_fps);
       x264_encoder_reconfig(encoder_, &param_);

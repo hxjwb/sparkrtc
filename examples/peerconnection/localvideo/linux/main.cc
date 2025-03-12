@@ -34,6 +34,8 @@ int local_video_fps;
 int local_min_qp;
 int local_max_qp;
 double local_vbv_buffer_ratio;
+double local_encoder_add_coefficient;
+double local_encoder_reduce_coefficient;
 bool is_sender = false;
 bool is_GUI = false;
 class CustomSocketServer : public rtc::PhysicalSocketServer {
@@ -135,10 +137,14 @@ int main(int argc, char* argv[]) {
   local_min_qp = absl::GetFlag(FLAGS_min_qp);
   local_max_qp = absl::GetFlag(FLAGS_max_qp);
   local_vbv_buffer_ratio = absl::GetFlag(FLAGS_vbv_buffer_ratio);
+  local_encoder_add_coefficient = absl::GetFlag(FLAGS_encoder_add_coefficient);
+  local_encoder_reduce_coefficient = absl::GetFlag(FLAGS_encoder_reduce_coefficient);
   is_GUI = absl::GetFlag(FLAGS_gui);
   
   rtc::SetQPBounds(local_min_qp, local_max_qp);
   rtc::SetVBVBufferRatio(local_vbv_buffer_ratio);
+  rtc::SetEncoderAddCoefficient(local_encoder_add_coefficient);
+  rtc::SetEncoderReduceCoefficient(local_encoder_reduce_coefficient);
 
   bool autocall = false;
   if (local_video_filename != "NONE") {

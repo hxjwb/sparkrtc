@@ -131,6 +131,8 @@ EncoderInfo GetEncoderInfo() const override;
   // int i_frame = 0;//frame index
   x264_nal_t *nal_t_;
   x264_param_t param_;
+  int last_bitrate_;
+  int last_drop_bitrate_;
 };
 
 }  // namespace webrtc

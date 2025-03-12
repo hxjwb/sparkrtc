@@ -643,6 +643,8 @@ def send_and_recv_video(cfg):
     minQP = cfg.minQP
     maxQP = cfg.maxQP
     vbvRatio = cfg.vbvRatio
+    encoderAddCoefficient = cfg.encoderAddCoefficient
+    encoderReduceCoefficient = cfg.encoderReduceCoefficient
 
     root_dir = "../../"
     res_overall_dir = "../"
@@ -660,8 +662,11 @@ def send_and_recv_video(cfg):
 
     server_command = root_dir + "out/Default/peerconnection_server --port " + port + " &"
     send_command = root_dir + "out/Default/peerconnection_localvideo --file " + send_video_path + \
-        " --min_qp " + str(minQP) + " --max_qp " + str(maxQP) + " --vbv_buffer_ratio " + str(vbvRatio) +\
-        " --height " + str(cfg.height) + " --width " + str(cfg.width) + " --fps " + str(fps) + " --server " + server_ip + " --port " + port
+        " --min_qp " + str(minQP) + " --max_qp " + str(maxQP) +\
+        " --vbv_buffer_ratio " + str(vbvRatio) + " --encoder_add_coefficient " + str(encoderAddCoefficient) +\
+        " --encoder_reduce_coefficient " + str(encoderReduceCoefficient) +\
+        " --height " + str(cfg.height) + " --width " + str(cfg.width) + " --fps " + str(fps) +\
+        " --server " + server_ip + " --port " + port
 
     send_log_file = recv_dir + "send.log"
 
@@ -832,6 +837,8 @@ def parse_args():
 	parser.add_argument("--width", type=int)
 	parser.add_argument("--height", type=int)
 	parser.add_argument("--output_dir", type=str)
+	parser.add_argument("--encoderAddCoefficient", type=float)
+	parser.add_argument("--encoderReduceCoefficient", type=float)
 
 	return parser.parse_args()
 
@@ -845,11 +852,11 @@ if __name__ == "__main__":
             sys.exit(1)
     elif cfg.option == "decode_recv_video":
         ssim, psnr, psnr_consider_drop, delay, drop_frames_index = decode_recv_video(cfg)
-        f_res_overal_file = open("../statistics.log", "a")
-        f_result_csv_file = open("../statistics.csv", "a")
-        prefix = str(cfg.data) + ','
-        output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, psnr_consider_drop, delay, drop_frames_index, prefix)
-        sys.exit(2)
+        f_res_overal_file = open("../every_trail_statistics.log", "a")
+        f_result_csv_file = open("../every_trail_statistics.csv", "a")
+        words = cfg.output_dir.split('/')
+        prefix = str(cfg.data) + ',' + str(words[0]) + ',' + str(words[1])
+        converged = output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, psnr_consider_drop, delay, drop_frames_index, prefix)
     elif cfg.option == "show_fig":
         show_fig(cfg)
     else:

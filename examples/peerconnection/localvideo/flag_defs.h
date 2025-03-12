@@ -22,6 +22,7 @@ const uint16_t kDefaultFps = 30;
 const uint16_t kMinQp = 2;
 const uint16_t kMaxQp = 51;
 const double kDefaultVbvBufferRatio = 1.0;
+const double kDefaultEncoderCoefficient = 1.0;
 const bool kDefaultisGUI = false;
 // Define flags for the peerconnect_client testing tool, in a separate
 // header file so that they can be shared across the different main.cc's
@@ -51,6 +52,10 @@ ABSL_FLAG(int,min_qp,kMinQp,"The minimum QP value for the encoder.");
 ABSL_FLAG(int,max_qp,kMaxQp,"The maximum QP value for the encoder.");
 
 ABSL_FLAG(double,vbv_buffer_ratio,kDefaultVbvBufferRatio,"The VBV buffer ratio for the encoder.");
+
+ABSL_FLAG(double,encoder_add_coefficient,kDefaultEncoderCoefficient,"The encoder coefficient for the encoder bitrate.");
+
+ABSL_FLAG(double,encoder_reduce_coefficient,kDefaultEncoderCoefficient,"The encoder coefficient for the encoder bitrate.");
 
 ABSL_FLAG(int,
           port,
