@@ -73,7 +73,7 @@ void WrappedDesktopCapturer::StartCapture() {
       // RTC_LOG(LS_INFO) << "Total frame: " << total_frame;
       static int display_times = 0;
       if (frame_count_ >= total_frame) {
-        if (display_times > 1) {
+        if (display_times >= 8) {
           usleep(20000000); // sleep 20 s
           auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
           RTC_LOG(LS_INFO) << "End system: " << current_time;

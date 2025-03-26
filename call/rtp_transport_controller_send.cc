@@ -170,7 +170,7 @@ void RtpTransportControllerSend::UpdateControlState() {
   retransmission_rate_limiter_.SetMaxRate(update->target_rate.bps());
   // We won't create control_handler_ until we have an observers.
   RTC_DCHECK(observer_ != nullptr);
-  RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::UpdateControlState()";
+  // RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::UpdateControlState()";
   observer_->OnTargetTransferRate(*update);
 }
 
@@ -347,7 +347,7 @@ void RtpTransportControllerSend::OnNetworkAvailability(bool network_available) {
   if (controller_) {
     control_handler_->SetNetworkAvailability(network_available);
     PostUpdates(controller_->OnNetworkAvailability(msg));
-    RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::OnNetworkAvailability";
+    // RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::OnNetworkAvailability";
     UpdateControlState();
   } else {
     MaybeCreateControllers();
@@ -611,7 +611,7 @@ void RtpTransportControllerSend::StartProcessPeriodicTasks() {
           RTC_DCHECK_RUN_ON(&sequence_checker_);
           TimeDelta expected_queue_time = pacer_.ExpectedQueueTime();
           control_handler_->SetPacerQueue(expected_queue_time);
-          RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::StartProcessPeriodicTasks";
+          // RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::StartProcessPeriodicTasks";
           UpdateControlState();
           return kPacerQueueUpdateInterval;
         });
@@ -656,7 +656,7 @@ void RtpTransportControllerSend::PostUpdates(NetworkControlUpdate update) {
   }
   if (update.target_rate) {
     control_handler_->SetTargetRate(*update.target_rate);
-    RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::PostUpdates";
+    // RTC_LOG(LS_INFO) << "mhhh RtpTransportControllerSend::PostUpdates";
     UpdateControlState();
   }
 }

@@ -285,15 +285,21 @@ def write_data_to_file(data_lists, file):
             content += "\n"
             f_file.write(content)
 
-def read_data_from_file(file, count, data_lists, seperator):
+def read_data_from_file(file, count, data_lists, seperator, strict_mode = True):
     lines = open(file,'r').read().split('\n')
     for line in lines:
         line = line.split(seperator)
-        if len(line) != count:
-            continue
-        for i in range(count):
-            if line[i].isdigit():
-                data_lists[i].append(int(line[i]))
+        if strict_mode:
+            if len(line) != count:
+                continue
+            for i in range(count):
+                if line[i].isdigit():
+                    data_lists[i].append(int(line[i]))
+        else:
+            if len(line) < count:
+                continue
+            for i in range(count):
+                data_lists[i].append(line[i])
 
 def extract_rate_and_framesize(recv_dir):
     send_log_file = recv_dir + "send.log"
@@ -630,21 +636,102 @@ def output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, ps
     f_average_record_file.write(prefix + ',' + str(new_trails_count) + ',' + str(new_trails_avg_psnr) + ',' + str(new_trails_avg_psnr_consider_drop) + ',' + str(new_trails_avg_delay) + ',' + str(new_trails_avg_head_psnr) + ',' + str(new_trails_avg_head_psnr_consider_drop) + ',' + str(new_trails_avg_tail_delay) + '\n')
 
     converged = False
-    if abs(new_trails_avg_head_psnr - last_trails_avg_head_psnr) < 0.01 and abs(new_trails_avg_head_psnr_consider_drop - last_trails_avg_head_psnr_consider_drop) < 0.01 and abs(new_trails_avg_tail_delay - last_trails_avg_tail_delay) < 0.5:
+    if abs(new_trails_avg_psnr - last_trails_avg_psnr) < 0.01 and abs(new_trails_avg_psnr_consider_drop - last_trails_avg_psnr_consider_drop) < 0.01 and abs(new_trails_avg_tail_delay - last_trails_avg_tail_delay) < 0.3:
         converged = True
-    if converged:
-        f_parameter_record_file = open("../parameter_result.log", "a")
-        f_parameter_record_file.write(prefix + ',' + str(new_trails_count) + ',' + str(new_trails_avg_psnr) + ',' + str(new_trails_avg_psnr_consider_drop) + ',' + str(new_trails_avg_delay) + ',' + str(new_trails_avg_head_psnr) + ',' + str(new_trails_avg_head_psnr_consider_drop) + ',' + str(new_trails_avg_tail_delay) + '\n')
 
-    return converged
+    return converged, new_trails_count, new_trails_avg_psnr, new_trails_avg_psnr_consider_drop, new_trails_avg_delay, new_trails_avg_tail_delay
 
+def output_drop_period_result(ssim, psnr, psnr_consider_drop, delay, prefix, output_dir, data):
+    ssim = np.array(ssim)
+    delay = np.array(delay)
+    psnr = np.array(psnr)
+    psnr_consider_drop = np.array(psnr_consider_drop)
+
+    avg_ssim = np.mean(ssim)
+    avg_delay = np.mean(delay)
+    avg_psnr = np.mean(psnr)
+    avg_psnr_consider_drop = np.mean(psnr_consider_drop)
+    
+    f_every_trail_statistics = open("../every_trail_statistics_drop_period.csv", "a")
+    res_dir = "../result/" + output_dir + "/res/" + data + "/"
+    send_index_to_receive_index_file = res_dir + "send2receive_index.log"
+    delay_file = res_dir + "delay.log"
+    send_index_to_receive_index = []
+    delay_time = []
+    read_data_from_file(delay_file, 4, [[], [], delay_time, []], ',', False)
+    read_data_from_file(send_index_to_receive_index_file, 2, [[], send_index_to_receive_index], ',', False)
+
+    start_index = -1
+    end_index = len(delay_time)
+    for i in range(len(delay_time)):
+        if start_index == -1 and int(delay_time[i]) > 8000:
+            start_index = i
+        if int(delay_time[i]) > 12000:
+            end_index = i
+            break
+    delay = delay[start_index:end_index]
+    psnr = psnr[start_index:end_index]
+    ssim = ssim[start_index:end_index]
+    psnr_consider_drop_start_index = -1
+    psnr_consider_drop_end_index = len(psnr_consider_drop)
+    for i in range(len(send_index_to_receive_index)):
+        if psnr_consider_drop_start_index == -1 and int(send_index_to_receive_index[i]) > start_index:
+            psnr_consider_drop_start_index = i
+        if int(send_index_to_receive_index[i]) > end_index:
+            psnr_consider_drop_end_index = i
+            break
+    psnr_consider_drop = psnr_consider_drop[psnr_consider_drop_start_index:psnr_consider_drop_end_index]
+
+    delay = np.array(delay)
+    psnr = np.array(psnr)
+    psnr_consider_drop = np.array(psnr_consider_drop)
+    ssim = np.array(ssim)
+    avg_delay = np.mean(delay)
+    avg_psnr = np.mean(psnr)
+    avg_psnr_consider_drop = np.mean(psnr_consider_drop)
+    avg_ssim = np.mean(ssim)
+
+     # video_file, bitrate_file, vbv_methods, ssim, psnr, delay, drop_frame_index
+    f_every_trail_statistics.write(prefix + "," + str(avg_ssim) + "," + str(avg_psnr) + ',' + str(avg_psnr_consider_drop) + "," + str(avg_delay) + ",0,0,0,")
+    avg_tail_delay = output_tail_result(f_every_trail_statistics, delay, 0.75)
+    f_every_trail_statistics.write("," + str(start_index) + "," + str(end_index) + "," + str(psnr_consider_drop_start_index) + "," + str(psnr_consider_drop_end_index) + "\n")
+    f_every_trail_statistics.close()
+
+    if not os.path.exists("../last_average_record_drop_period.log"):
+        f_average_record_file = open("../last_average_record_drop_period.log", "w")
+        f_average_record_file.write("0,0,0,0,0,0,0\n")
+        f_average_record_file.close()
+    datas = open("../last_average_record_drop_period.log", 'r').read().split('\n')[0].split(',')
+    trails_count = int(datas[0])
+    last_trails_avg_psnr = float(datas[1])
+    last_trails_avg_psnr_consider_drop = float(datas[2])
+    last_trails_avg_delay = float(datas[3])
+    last_trails_avg_tail_delay = float(datas[6])
+
+    new_trails_count = trails_count + 1
+    new_trails_avg_psnr = (last_trails_avg_psnr * trails_count + avg_psnr) / new_trails_count
+    new_trails_avg_psnr_consider_drop = (last_trails_avg_psnr_consider_drop * trails_count + avg_psnr_consider_drop) / new_trails_count
+    new_trails_avg_delay = (last_trails_avg_delay * trails_count + avg_delay) / new_trails_count
+    new_trails_avg_tail_delay = (last_trails_avg_tail_delay * trails_count + avg_tail_delay) / new_trails_count
+
+    f_average_record_file = open("../last_average_record_drop_period.log", "w")
+    f_average_record_file.write(str(new_trails_count) + ',' + str(new_trails_avg_psnr) + ',' + str(new_trails_avg_psnr_consider_drop) + ',' + str(new_trails_avg_delay) + ',0,0,' + str(new_trails_avg_tail_delay) + '\n')
+
+    f_average_record_file = open("../average_records_drop_period.log", "a")
+    f_average_record_file.write(prefix + ',' + str(new_trails_count) + ',' + str(new_trails_avg_psnr) + ',' + str(new_trails_avg_psnr_consider_drop) + ',' + str(new_trails_avg_delay) + ',0,0,' + str(new_trails_avg_tail_delay) + '\n')
+
+    converged = False
+    if abs(new_trails_avg_psnr - last_trails_avg_psnr) < 0.01 and abs(new_trails_avg_psnr_consider_drop - last_trails_avg_psnr_consider_drop) < 0.01 and abs(new_trails_avg_tail_delay - last_trails_avg_tail_delay) < 0.3:
+        converged = True
+
+    return converged, new_trails_count, new_trails_avg_psnr, new_trails_avg_psnr_consider_drop, new_trails_avg_delay, new_trails_avg_tail_delay
 
 def send_and_recv_video(cfg):
     minQP = cfg.minQP
     maxQP = cfg.maxQP
     vbvRatio = cfg.vbvRatio
     encoderAddCoefficient = cfg.encoderAddCoefficient
-    encoderReduceCoefficient = cfg.encoderReduceCoefficient
+    encoderReduceCoefficient = 0 #cfg.encoderReduceCoefficient
 
     root_dir = "../../"
     res_overall_dir = "../"
@@ -691,7 +778,21 @@ def send_and_recv_video(cfg):
 
     ssim, psnr, psnr_consider_drop, delay, drop_frames_index = decode_recv_video(cfg)
     prefix = str(cfg.data) + ',' + str(words[0]) + ',' + str(words[1])
-    converged = output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, psnr_consider_drop, delay, drop_frames_index, prefix)
+    converged, count, avg_psnr, avg_psnr_consider_drop, avg_delay, avg_tail_delay = output_statistic_result(f_res_overal_file, f_result_csv_file, ssim, psnr, psnr_consider_drop, delay, drop_frames_index, prefix)
+    focus_drop_period = cfg.focusDropPeriod
+    if 'static' in cfg.output_dir:
+        focus_drop_period = False
+    if focus_drop_period:
+        converged_drop, count_drop, avg_psnr_drop, avg_psnr_consider_drop_drop, avg_delay_drop, avg_tail_delay_drop = output_drop_period_result(ssim, psnr, psnr_consider_drop, delay, prefix, cfg.output_dir, cfg.data)
+        converged = converged and converged_drop
+    if converged:
+        f_parameter_record_file = open("../parameter_result.log", "a")
+        f_parameter_record_file.write(prefix + ',' + str(count) + ',' + str(avg_psnr) + ',' + str(avg_psnr_consider_drop) + ',' + str(avg_delay) + ',0,0,' + str(avg_tail_delay) + '\n')
+
+        if focus_drop_period:
+            f_parameter_record_file = open("../parameter_result_drop_period.log", "a")
+            f_parameter_record_file.write(prefix + ',' + str(count_drop) + ',' + str(avg_psnr_drop) + ',' + str(avg_psnr_consider_drop_drop) + ',' + str(avg_delay_drop) + ',0,0,' + str(avg_tail_delay_drop) + '\n')
+        
     return converged
 
 ## Show figure
@@ -724,6 +825,7 @@ def show_multi_plot_fig(files, x_indexes, y_indexes, labels, x_label, y_label, f
         plt.plot(data_index[start_index:], data[start_index:], label = labels[idx], color = color)
 
     plt.legend()
+    plt.grid()
     plt.savefig(fig_file, bbox_inches = 'tight', pad_inches = 0.1)
 
 def show_experiment_fig(data_file, fig_file, x_index, y_index, label, x_label, start_index = 0):
@@ -745,6 +847,7 @@ def show_experiment_fig(data_file, fig_file, x_index, y_index, label, x_label, s
     plt.ylabel(label, fontsize = 14)
     plt.plot(data_index[start_index:], data[start_index:], label = label)
     plt.legend()
+    plt.grid()
     plt.savefig(fig_file, bbox_inches = 'tight', pad_inches = 0.1)
 
 def show_multi_y_axis_fig(files, x_indexes, y_indexes, labels, x_label, start_index, fig_file):
@@ -787,7 +890,7 @@ def show_multi_y_axis_fig(files, x_indexes, y_indexes, labels, x_label, start_in
             ax2.plot(data_index[start_index:], data[start_index:], color)
             ax2.set_ylabel(labels[idx], color=color, fontsize=14)
             ax2.tick_params(axis="y", labelcolor=color)
-
+    plt.grid()
     plt.savefig(fig_file, bbox_inches = 'tight', pad_inches = 0.1)
 
 def show_fig(cfg):
@@ -839,6 +942,7 @@ def parse_args():
 	parser.add_argument("--output_dir", type=str)
 	parser.add_argument("--encoderAddCoefficient", type=float)
 	parser.add_argument("--encoderReduceCoefficient", type=float)
+	parser.add_argument("--focusDropPeriod", type=int)
 
 	return parser.parse_args()
 

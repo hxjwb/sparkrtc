@@ -1512,7 +1512,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                                  int frames_scheduled_for_processing,
                                  const VideoFrame& video_frame) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  RTC_LOG(LS_INFO) << "mhhh VideoStreamEncoder::OnFrame";
+  // RTC_LOG(LS_INFO) << "mhhh VideoStreamEncoder::OnFrame";
   VideoFrame incoming_frame = video_frame;
 
   // In some cases, e.g., when the frame from decoder is fed to encoder,
@@ -1777,7 +1777,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
                                                int64_t time_when_posted_us) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
   input_state_provider_.OnFrameSizeObserved(video_frame.size());
-  RTC_LOG(LS_INFO) << "mhhh MaybeEncodeVideoFrame video_frame size: " << video_frame.size();
+  // RTC_LOG(LS_INFO) << "mhhh MaybeEncodeVideoFrame video_frame size: " << video_frame.size();
 
   if (!last_frame_info_ || video_frame.width() != last_frame_info_->width ||
       video_frame.height() != last_frame_info_->height ||
@@ -1815,7 +1815,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   // Poll the rate before updating, otherwise we risk the rate being estimated
   // a little too high at the start of the call when then window is small.
   uint32_t framerate_fps = GetInputFramerateFps();
-  RTC_LOG(LS_INFO) << "mhhh MaybeEncodeVideoFrame GetInputFramerateFps:" << framerate_fps;
+  // RTC_LOG(LS_INFO) << "mhhh MaybeEncodeVideoFrame GetInputFramerateFps:" << framerate_fps;
   frame_cadence_adapter_->UpdateFrameRate();
 
   int64_t now_ms = clock_->TimeInMilliseconds();
@@ -2164,7 +2164,7 @@ EncodedImage VideoStreamEncoder::AugmentEncodedImage(
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
-  RTC_LOG(LS_INFO) << "mhhh VideoStreamEncoder::OnEncodedImage";
+  // RTC_LOG(LS_INFO) << "mhhh VideoStreamEncoder::OnEncodedImage";
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
 
@@ -2289,7 +2289,7 @@ DataRate VideoStreamEncoder::UpdateTargetBitrate(DataRate target_bitrate,
     int reduce_bitrate_bps = std::min(
         static_cast<int>(target_bitrate.bps() * cwnd_reduce_ratio),
         static_cast<int>(target_bitrate.bps() - send_codec_.minBitrate * 1000));
-    RTC_LOG(LS_INFO) << "mhhh reduce_bitrate_bps:" << reduce_bitrate_bps;
+    // RTC_LOG(LS_INFO) << "mhhh reduce_bitrate_bps:" << reduce_bitrate_bps;
     if (reduce_bitrate_bps > 0) {
       // At maximum the congestion window can drop 1/2 frames.
       cwnd_frame_drop_interval_ = std::max(

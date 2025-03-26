@@ -649,7 +649,7 @@ void FrameCadenceAdapterImpl::ProcessKeyFrameRequest() {
 void FrameCadenceAdapterImpl::OnFrame(const VideoFrame& frame) {
   // This method is called on the network thread under Chromium, or other
   // various contexts in test.
-  RTC_LOG(LS_INFO) << "mhhh FrameCadenceAdapterImpl::OnFrame zero_hertz_adapter_:" << (zero_hertz_adapter_ ? 1 : 0) << " passthrough_adapter_: " << (passthrough_adapter_ ? 1 : 0);
+  // RTC_LOG(LS_INFO) << "mhhh FrameCadenceAdapterImpl::OnFrame zero_hertz_adapter_:" << (zero_hertz_adapter_ ? 1 : 0) << " passthrough_adapter_: " << (passthrough_adapter_ ? 1 : 0);
   RTC_DCHECK_RUNS_SERIALIZED(&incoming_frame_race_checker_);
   TRACE_EVENT0("webrtc", "FrameCadenceAdapterImpl::OnFrame");
 
@@ -676,7 +676,7 @@ void FrameCadenceAdapterImpl::OnFrame(const VideoFrame& frame) {
     const int frames_scheduled_for_processing =
         frames_scheduled_for_processing_.fetch_sub(1,
                                                    std::memory_order_relaxed);
-    RTC_LOG(LS_INFO) << "mhhh frames_scheduled_for_processing:" << frames_scheduled_for_processing;
+    // RTC_LOG(LS_INFO) << "mhhh frames_scheduled_for_processing:" << frames_scheduled_for_processing;
     OnFrameOnMainQueue(post_time, frames_scheduled_for_processing,
                        std::move(frame));
   }));

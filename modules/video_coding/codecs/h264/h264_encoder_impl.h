@@ -133,6 +133,9 @@ EncoderInfo GetEncoderInfo() const override;
   x264_param_t param_;
   int last_bitrate_;
   int last_drop_bitrate_;
+  bool has_reported_drop_ = false;
+  // bool has_recovery_ = false;
+  int64_t reported_drop_time_ = -1;
 };
 
 }  // namespace webrtc

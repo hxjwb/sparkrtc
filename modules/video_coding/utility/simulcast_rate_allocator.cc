@@ -78,7 +78,7 @@ VideoBitrateAllocation SimulcastRateAllocator::Allocate(
   DistributeAllocationToSimulcastLayers(parameters.total_bitrate, stable_rate,
                                         &allocated_bitrates);
   DistributeAllocationToTemporalLayers(&allocated_bitrates);
-  RTC_LOG(LS_INFO) << "mhhh Allocate" << allocated_bitrates.GetBitrate(0, 0);
+  // RTC_LOG(LS_INFO) << "mhhh Allocate" << allocated_bitrates.GetBitrate(0, 0);
   return allocated_bitrates;
 }
 

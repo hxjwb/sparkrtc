@@ -533,7 +533,7 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
 EncodedImageCallback::Result VideoSendStreamImpl::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
-  RTC_LOG(LS_INFO) << "mhhh VideoSendStreamImpl::OnEncodedImage";
+  // RTC_LOG(LS_INFO) << "mhhh VideoSendStreamImpl::OnEncodedImage";
   // Encoded is called on whatever thread the real encoder implementation run
   // on. In the case of hardware encoders, there might be several encoders
   // running in parallel on different threads.

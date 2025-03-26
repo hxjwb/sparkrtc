@@ -96,7 +96,7 @@ void VideoBroadcaster::OnFrame(const webrtc::VideoFrame& frame) {
       copy.clear_update_rect();
       sink_pair.sink->OnFrame(copy);
     } else {
-      RTC_LOG(LS_INFO) << "mhhh Simple sink pair OnFrame";
+      // RTC_LOG(LS_INFO) << "mhhh Simple sink pair OnFrame";
       sink_pair.sink->OnFrame(frame);
     }
   }

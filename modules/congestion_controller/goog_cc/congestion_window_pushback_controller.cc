@@ -68,7 +68,7 @@ uint32_t CongestionWindowPushbackController::UpdateTargetBitrate(
   }
   uint32_t adjusted_target_bitrate_bps =
       static_cast<uint32_t>(bitrate_bps * encoding_rate_ratio_);
-  RTC_LOG(LS_INFO) << "mhhh CongestionWindowPushbackController::UpdateTargetBitrate bitrate_bps:" << bitrate_bps << " outstanding_bytes_:" << outstanding_bytes_ << " pacing_bytes_:" << pacing_bytes_ << " total_bytes:" << total_bytes << " current_data_window_->bytes():" << current_data_window_->bytes() << " fill_ratio:" << fill_ratio << " encoding_rate_ratio_:" << encoding_rate_ratio_;
+  // RTC_LOG(LS_INFO) << "mhhh CongestionWindowPushbackController::UpdateTargetBitrate bitrate_bps:" << bitrate_bps << " outstanding_bytes_:" << outstanding_bytes_ << " pacing_bytes_:" << pacing_bytes_ << " total_bytes:" << total_bytes << " current_data_window_->bytes():" << current_data_window_->bytes() << " fill_ratio:" << fill_ratio << " encoding_rate_ratio_:" << encoding_rate_ratio_;
 
   // Do not adjust below the minimum pushback bitrate but do obey if the
   // original estimate is below it.
