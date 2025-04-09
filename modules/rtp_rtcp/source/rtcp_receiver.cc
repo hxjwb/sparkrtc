@@ -613,6 +613,7 @@ void RTCPReceiver::HandleReportBlock(const ReportBlock& report_block,
     }
 
     packet_information->rtt = rtt;
+    RTC_LOG(LS_INFO) << "[hxj] {\"rtt\":" << rtt.ms() << "}";
   }
 
   packet_information->report_block_datas.push_back(*report_block_data);
