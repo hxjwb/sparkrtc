@@ -217,9 +217,23 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
       packet->set_pacer_exit_time(now);
     }
   }
-
-  RTC_LOG(LS_INFO) << "PacketSend " << packet->Timestamp() << " "
-                   << packet->SequenceNumber() << " " << rtc::TimeUTCMicros();
+  // get the first 20 bytes of packet payload
+  const uint8_t* payload = packet->payload().data();
+  // get the first 10 bytes of the payload for logging
+  rtc::StringBuilder payload_builder;
+  // payload_builder << "0x";
+  for (size_t i = 0; i < std::min<size_t>(10, packet->payload().size());
+       ++i) {
+    payload_builder.AppendFormat("%02x", payload[i]);
+  }
+  std::string payload_str = payload_builder.Release();
+  
+  uint16_t original_sequence_number =
+      packet->retransmitted_sequence_number().value_or(packet->SequenceNumber());
+  
+  RTC_LOG(LS_INFO) << "Prfl_pkt_send@" << packet->Timestamp() << " "
+                   << packet->SequenceNumber() << " " << packet->packet_type().value_or(RtpPacketMediaType::kAudio) << " "
+                   << payload_str << " " << packet->size() << " " << original_sequence_number;
 
   auto compound_packet = Packet{std::move(packet), pacing_info, now};
   if (enable_send_packet_batching_ && !is_audio_) {

@@ -184,7 +184,7 @@ H264BitstreamParser::Result H264BitstreamParser::ParseNonParameterSetNalu(
   if ((pps_->weighted_pred_flag && (slice_type == H264::SliceType::kP ||
                                     slice_type == H264::SliceType::kSp)) ||
       (pps_->weighted_bipred_idc == 1 && slice_type == H264::SliceType::kB)) {
-    RTC_LOG(LS_ERROR) << "Streams with pred_weight_table unsupported.";
+    // RTC_LOG(LS_ERROR) << "Streams with pred_weight_table unsupported.";
     return kUnsupportedStream;
   }
   // if ((weighted_pred_flag && (slice_type == P || slice_type == SP)) ||
@@ -269,9 +269,9 @@ void H264BitstreamParser::ParseSlice(const uint8_t* slice, size_t length) {
     case H264::NaluType::kPrefix:
       break;  // Ignore these nalus, as we don't care about their contents.
     default:
-      Result res = ParseNonParameterSetNalu(slice, length, nalu_type);
-      if (res != kOk)
-        RTC_DLOG(LS_INFO) << "Failed to parse bitstream. Error: " << res;
+      // Result res = ParseNonParameterSetNalu(slice, length, nalu_type);
+      // if (res != kOk)
+        // RTC_DLOG(LS_INFO) << "Failed to parse bitstream. Error: " << res;
       break;
   }
 }

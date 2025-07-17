@@ -476,8 +476,9 @@ void RTPSender::EnqueuePackets(
     rtp_ts =  packets[0]->Timestamp();
   }
   
-  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|rtpts " <<f_size << " " << log_captured_time << " " << log_encoded_time << " " << rtp_ts;
-  RTC_LOG(LS_INFO)  << "Framesize: " << f_size / 1500; // Packets
+  // RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|rtpts " <<f_size << " " << log_captured_time << " " << log_encoded_time << " " << rtp_ts;
+  RTC_LOG(LS_INFO) << "Prfl_frame_send@" << rtp_ts << " " << f_size << " " << (log_encoded_time - log_captured_time) / 1000;
+  // RTC_LOG(LS_INFO)  << "Framesize: " << f_size / 1500; // Packets
   for (auto& packet : packets) {
     RTC_DCHECK(packet);
     RTC_CHECK(packet->packet_type().has_value())

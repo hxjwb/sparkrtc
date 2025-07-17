@@ -226,9 +226,9 @@ extern int minimum_action;
 
 void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
 
-  uint32_t push_time = CurrentTime().us();
-  uint32_t ts = packet->Timestamp();
-  RTC_LOG(LS_INFO) << "PUSH " << ts << " " << push_time;
+  // uint32_t push_time = CurrentTime().us();
+  // uint32_t ts = packet->Timestamp();
+  // RTC_LOG(LS_INFO) << "PUSH " << ts << " " << push_time;
   
 
 #if 0
@@ -666,10 +666,10 @@ void PacingController::ProcessPackets() {
         packet_size += DataSize::Bytes(rtp_packet->headers_size()) +
                        transport_overhead_per_packet_;
       }
-      uint32_t pop_time = CurrentTime().us();
-      uint32_t ts = rtp_packet->Timestamp();
+      // uint32_t pop_time = CurrentTime().us();
+      // uint32_t ts = rtp_packet->Timestamp();
 
-      RTC_LOG(LS_INFO) << "POP " << ts << " " << pop_time;
+      // RTC_LOG(LS_INFO) << "POP " << ts << " " << pop_time;
       packet_sender_->SendPacket(std::move(rtp_packet), pacing_info);
 #if ACTION
       // Consume token when sending with bursts
@@ -677,8 +677,8 @@ void PacingController::ProcessPackets() {
         current_available_token -= packet_size.bytes();
       }
       // log tokens and bucket size
-      RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-      RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
+      // RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
+      // RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
 #endif
       for (auto& packet : packet_sender_->FetchFec()) {
         EnqueuePacket(std::move(packet));

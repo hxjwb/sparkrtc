@@ -115,8 +115,9 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   
   
   uint32_t rtpts = decodedImage.timestamp();
-  RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|rtpts " << frame_size << " " << before_decode_time << " " << decoded_time  << " " << rtpts;
-
+  // RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|rtpts " << frame_size << " " << before_decode_time << " " << decoded_time  << " " << rtpts;
+  RTC_LOG(LS_INFO) << "Prfl_frame_recv@" << rtpts << " "
+                   << (decoded_time - before_decode_time) / 1000;
 
   absl::optional<FrameInfo> frame_info;
   int timestamp_map_size = 0;

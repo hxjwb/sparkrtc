@@ -541,7 +541,20 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
 
   auto packet =
       std::make_unique<video_coding::PacketBuffer::Packet>(rtp_packet, video);
+  // RTC_LOG packet size and time
+  const uint8_t* payload = rtp_packet.payload().data();
+  
+  // get the first 10 bytes of the payload for logging
+  rtc::StringBuilder payload_builder;
+  for (size_t i = 0; i < std::min<size_t>(10, rtp_packet.payload().size());
+       ++i) {
+    payload_builder.AppendFormat("%02x", payload[i]);
+  }
+  std::string payload_str = payload_builder.Release();
 
+
+
+  RTC_LOG(LS_INFO) << "Prfl_pkt_recv@" << payload_str << " " << rtp_packet.SequenceNumber();
   int64_t unwrapped_rtp_seq_num =
       rtp_seq_num_unwrapper_.Unwrap(rtp_packet.SequenceNumber());
 
@@ -790,12 +803,12 @@ void RtpVideoStreamReceiver2::OnInsertedPacket(
         rtp_seq_num_unwrapper_.Unwrap(packet->seq_num);
     RTC_DCHECK_GT(packet_infos_.count(unwrapped_rtp_seq_num), 0);
     RtpPacketInfo& packet_info = packet_infos_[unwrapped_rtp_seq_num];
-    int64_t now = clock_->CurrentTime().us();
-    int64_t recv_time = packet_info.receive_time().us();
-    int64_t offset = recv_time - now;
-    int64_t now_utc = rtc::TimeUTCMicros();
-    int64_t recv_time_utc = now_utc + offset;
-    RTC_LOG(LS_INFO) << "Received " << packet_info.rtp_timestamp() << " "  <<  packet->seq_num << " " << recv_time_utc;
+    // int64_t now = clock_->CurrentTime().us();
+    // int64_t recv_time = packet_info.receive_time().us();
+    // int64_t offset = recv_time - now;
+    // int64_t now_utc = rtc::TimeUTCMicros();
+    // int64_t recv_time_utc = now_utc + offset;
+    // RTC_LOG(LS_INFO) << "hxjReceived " << packet_info.rtp_timestamp() << " "  <<  packet->seq_num << " " << recv_time_utc;
     if (packet->is_first_packet_in_frame()) {
       first_packet = packet.get();
       max_nack_count = packet->times_nacked;
@@ -858,8 +871,8 @@ void RtpVideoStreamReceiver2::OnAssembledFrame(
     std::unique_ptr<RtpFrameObject> frame) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   RTC_DCHECK(frame);
-  uint64_t now = rtc::TimeUTCMicros();
-  RTC_LOG(LS_INFO) << "Assembled " << frame->RtpTimestamp() << " " << now;
+  // uint64_t now = rtc::TimeUTCMicros();
+  RTC_LOG(LS_INFO) << "Prfl_frame_assemble@" << frame->RtpTimestamp();
   const absl::optional<RTPVideoHeader::GenericDescriptorInfo>& descriptor =
       frame->GetRtpVideoHeader().generic;
 
