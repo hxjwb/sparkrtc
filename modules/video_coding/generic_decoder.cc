@@ -27,6 +27,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -38,6 +39,8 @@ constexpr size_t kDecoderFrameMemoryLength = 10;
 
 }
 
+int64_t before_decode_time;
+int frame_size;
 VCMDecodedFrameCallback::VCMDecodedFrameCallback(
     VCMTiming* timing,
     Clock* clock,
@@ -107,6 +110,14 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
                        "timestamp", decodedImage.timestamp());
   // TODO(holmer): We should improve this so that we can handle multiple
   // callbacks from one call to Decode().
+  int64_t decoded_time = rtc::TimeUTCMicros();
+  // Get Unix timestamp
+  
+  
+  uint32_t rtpts = decodedImage.timestamp();
+  RTC_LOG(LS_INFO)  << "LOG_RECV|size|decode_time|decoded_time|rtpts " << frame_size << " " << before_decode_time << " " << decoded_time  << " " << rtpts;
+
+
   absl::optional<FrameInfo> frame_info;
   int timestamp_map_size = 0;
   int dropped_frames = 0;
@@ -217,6 +228,12 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
       timing_frame_info.decode_finish_ms - timing_frame_info.decode_start_ms);
   _timing->SetTimingFrameInfo(timing_frame_info);
 
+  RTC_LOG(LS_VERBOSE) << "**FrameInfo**, timestamp_rtp " << timing_frame_info.rtp_timestamp
+                      << " receive_start " << timing_frame_info.receive_start_ms
+                      << " receive_finish " << timing_frame_info.receive_finish_ms
+                      << " decode_start " << timing_frame_info.decode_start_ms
+                      << " decode_finish " << timing_frame_info.decode_finish_ms;
+
   decodedImage.set_timestamp_us(
       frame_info->render_time ? frame_info->render_time->us() : -1);
   _receiveCallback->FrameToRender(decodedImage, qp, decode_time,
@@ -281,7 +298,10 @@ bool VCMGenericDecoder::Configure(const VideoDecoder::Settings& settings) {
   return ok;
 }
 
+
 int32_t VCMGenericDecoder::Decode(const EncodedFrame& frame, Timestamp now) {
+  frame_size = frame.size();
+  before_decode_time = rtc::TimeUTCMicros();
   return Decode(frame, now, frame.RenderTimeMs());
 }
 

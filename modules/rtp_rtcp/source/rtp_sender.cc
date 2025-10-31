@@ -36,8 +36,14 @@
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
-
+int64_t log_encoded_time;
+int64_t log_captured_time;
+int f_size;
 namespace {
+
+
+// extern std::string md5_str;
+
 constexpr size_t kMinAudioPaddingLength = 50;
 constexpr size_t kRtpHeaderLength = 12;
 
@@ -465,6 +471,13 @@ void RTPSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
   RTC_DCHECK(!packets.empty());
   Timestamp now = clock_->CurrentTime();
+  uint32_t rtp_ts = 0;
+  if (packets.size() != 0) {
+    rtp_ts =  packets[0]->Timestamp();
+  }
+  
+  RTC_LOG(LS_INFO)  << "LOG_SEND|size|captured_time|encoded_time|rtpts " <<f_size << " " << log_captured_time << " " << log_encoded_time << " " << rtp_ts;
+  RTC_LOG(LS_INFO)  << "Framesize: " << f_size / 1500; // Packets
   for (auto& packet : packets) {
     RTC_DCHECK(packet);
     RTC_CHECK(packet->packet_type().has_value())

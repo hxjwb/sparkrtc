@@ -70,19 +70,20 @@ void WrappedDesktopCapturer::StartCapture() {
 
       if (frame_count_ >= total_frame) {
         frame_count_ = 0;
+        exit(0);
       }
-        rtc::scoped_refptr<webrtc::I420BufferInterface> frame_buffer = video_d->GetFrame(frame_count_++);
+      rtc::scoped_refptr<webrtc::I420BufferInterface> frame_buffer = video_d->GetFrame(frame_count_++);
       
       webrtc::VideoFrame captureFrame =
         webrtc::VideoFrame::Builder()
         .set_video_frame_buffer(frame_buffer)
-        .set_timestamp_rtp(0)//set_ntp_time_ms
-              .set_ntp_time_ms(rtc::TimeMillis())
+        .set_timestamp_rtp(0)
+        .set_ntp_time_ms(rtc::TimeMillis())
         .set_timestamp_ms(rtc::TimeMillis())
         .set_rotation(webrtc::kVideoRotation_0)
         .build();
         
-    // captureFrame.set_ntp_time_ms(0);
+      // captureFrame.set_ntp_time_ms(0);
       TestDesktopCapturer::OnFrame(captureFrame);
     }
   }));
