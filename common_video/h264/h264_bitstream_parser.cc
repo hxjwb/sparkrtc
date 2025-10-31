@@ -184,7 +184,7 @@ H264BitstreamParser::Result H264BitstreamParser::ParseNonParameterSetNalu(
   if ((pps_->weighted_pred_flag && (slice_type == H264::SliceType::kP ||
                                     slice_type == H264::SliceType::kSp)) ||
       (pps_->weighted_bipred_idc == 1 && slice_type == H264::SliceType::kB)) {
-    RTC_LOG(LS_ERROR) << "Streams with pred_weight_table unsupported.";
+    // RTC_LOG(LS_ERROR) << "Streams with pred_weight_table unsupported.";
     return kUnsupportedStream;
   }
   // if ((weighted_pred_flag && (slice_type == P || slice_type == SP)) ||
@@ -280,9 +280,9 @@ void H264BitstreamParser::ParseBitstream(
     rtc::ArrayView<const uint8_t> bitstream) {
   std::vector<H264::NaluIndex> nalu_indices =
       H264::FindNaluIndices(bitstream.data(), bitstream.size());
-  for (const H264::NaluIndex& index : nalu_indices)
-    ParseSlice(bitstream.data() + index.payload_start_offset,
-               index.payload_size);
+  // for (const H264::NaluIndex& index : nalu_indices)
+  //   ParseSlice(bitstream.data() + index.payload_start_offset,
+  //              index.payload_size);
 }
 
 absl::optional<int> H264BitstreamParser::GetLastSliceQp() const {
