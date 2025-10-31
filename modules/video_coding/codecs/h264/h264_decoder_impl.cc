@@ -19,7 +19,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
-
+#include <thread>
 extern "C" {
 #include "third_party/ffmpeg/libavcodec/avcodec.h"
 #include "third_party/ffmpeg/libavformat/avformat.h"
@@ -343,7 +343,7 @@ int32_t H264DecoderImpl::RegisterDecodeCompleteCallback(
   decoded_image_callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
-
+int frame_count = 0;
 int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
                                 bool /*missing_frames*/,
                                 int64_t /*render_time_ms*/) {
@@ -379,9 +379,14 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
   packet->size = static_cast<int>(input_image.size());
   int64_t frame_timestamp_us = input_image.ntp_time_ms_ * 1000;  // ms -> μs
   av_context_->reordered_opaque = frame_timestamp_us;
+  frame_count ++;
+  // if ( frame_count > 160 && frame_count < 180) {
+  //     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // }
 
   int result = avcodec_send_packet(av_context_.get(), packet.get());
-
+  // sleep for 10 ms
+  
   if (result < 0) {
     RTC_LOG(LS_ERROR) << "avcodec_send_packet error: " << result;
     ReportError();

@@ -1412,6 +1412,21 @@ void Call::DeliverRtpPacket(
         packet_time_us, rtc::TimeUTCMicros(), clock_->TimeInMicroseconds());
     packet.set_arrival_time(Timestamp::Micros(packet_time_us));
   }
+  // get the first 10 bytes of the payload for logging
+  rtc::StringBuilder payload_builder;
+  const uint8_t* payload = packet.payload().data();
+  for (size_t i = 0; i < std::min<size_t>(10, packet.payload().size());
+       ++i) {
+    payload_builder.AppendFormat("%02x", payload[i]);
+  }
+  std::string payload_str = payload_builder.Release();
+  RTC_LOG(LS_VERBOSE) << "Received RTP packet with SSRC: " << packet.Ssrc()
+                      << ", seq num: " << packet.SequenceNumber()
+                      << ", payload type: " << packet.PayloadType()
+                      << ", payload size: " << packet.payload_size()
+                      << ", payload: " << payload_str;
+
+
 
   NotifyBweOfReceivedPacket(packet, media_type);
 
