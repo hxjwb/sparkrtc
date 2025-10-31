@@ -218,8 +218,8 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
     }
   }
 
-  RTC_LOG(LS_INFO) << "PacketSend " << packet->Timestamp() << " "
-                   << packet->SequenceNumber() << " " << rtc::TimeUTCMicros();
+  // RTC_LOG(LS_INFO) << "PacketSend " << packet->Timestamp() << " "
+  //                  << packet->SequenceNumber() << " " << rtc::TimeUTCMicros();
 
   auto compound_packet = Packet{std::move(packet), pacing_info, now};
   if (enable_send_packet_batching_ && !is_audio_) {

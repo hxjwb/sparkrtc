@@ -7,7 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+#define FACTOR 1.0f
 #include "video/video_stream_encoder.h"
 
 #include <algorithm>
@@ -46,6 +46,7 @@
 #include "rtc_base/experiments/encoder_info_settings.h"
 #include "rtc_base/experiments/rate_control_settings.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/ace.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
@@ -57,10 +58,16 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 
+
+#define AV1_ENCODING 0
 namespace webrtc {
+extern int64_t log_encoded_time;
+extern int64_t log_captured_time;
+extern int f_size;
 
 namespace {
 
+// std::string md5_str;
 // Time interval for logging frame counts.
 const int64_t kFrameLogIntervalMs = 60000;
 
@@ -82,6 +89,9 @@ const int64_t kParameterUpdateIntervalMs = 1000;
 constexpr int kMaxAnimationPixels = 1280 * 720;
 
 constexpr int kDefaultMinScreenSharebps = 1200000;
+
+
+
 
 int GetNumSpatialLayers(const VideoCodec& codec) {
   if (codec.codecType == kVideoCodecVP9) {
@@ -1556,9 +1566,10 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                                            incoming_frame.height());
   ++captured_frame_count_;
   CheckForAnimatedContent(incoming_frame, post_time.us());
-  bool cwnd_frame_drop =
-      cwnd_frame_drop_interval_ &&
-      (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
+  // bool cwnd_frame_drop =
+  //     cwnd_frame_drop_interval_ &&
+  //     (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
+  bool cwnd_frame_drop = false;
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
   } else {
@@ -1865,9 +1876,10 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   frame_dropper_.Leak(framerate_fps);
   // Frame dropping is enabled iff frame dropping is not force-disabled, and
   // rate controller is not trusted.
-  const bool frame_dropping_enabled =
-      !force_disable_frame_dropper_ &&
-      !encoder_info_.has_trusted_rate_controller;
+  // const bool frame_dropping_enabled = 
+  //     !force_disable_frame_dropper_ &&
+  //     !encoder_info_.has_trusted_rate_controller;
+  const bool frame_dropping_enabled = false;
   frame_dropper_.Enable(frame_dropping_enabled);
   if (frame_dropping_enabled && frame_dropper_.DropFrame()) {
     RTC_LOG(LS_VERBOSE)
@@ -2032,6 +2044,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   frame_encode_metadata_writer_.OnEncodeStarted(out_frame);
 
+  log_captured_time = rtc::TimeUTCMicros();
+
   const int32_t encode_status = encoder_->Encode(out_frame, &next_frame_types_);
   was_encode_called_since_last_initialization_ = true;
 
@@ -2128,12 +2142,77 @@ EncodedImage VideoStreamEncoder::AugmentEncodedImage(
 
   return image_copy;
 }
-
+#if ACTION
+extern int current_available_token;
+extern int init_bucket_size;
+extern int nack_state;
+extern int predicted_queue_packets;
+double bucket_adjust_factor = 0.5; // initialize as half the average frame size
+int token_bucket_size = 0;
+int additive_increase_value = 0;
+int safe_queue_packets = 0;
+int check_times = -1;
+#endif
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
+#if ACTION
+  if (nack_state > 0 || predicted_queue_packets > 10) {
+    check_times = 0;
+    double old_bucket_adjust_factor = bucket_adjust_factor;
+    if (predicted_queue_packets > 10) {
+      int overused = (predicted_queue_packets - 10) * 1200;
+      if (token_bucket_size > overused)
+        bucket_adjust_factor = static_cast<double>(token_bucket_size - overused) /
+                              static_cast<double>(init_bucket_size);
+      else bucket_adjust_factor = 0.0;
+      RTC_LOG(LS_INFO) << "predicted_queue_packets: " << predicted_queue_packets << " overused: " << overused;
+    }
+    if (nack_state > 0) {
+      bucket_adjust_factor = std::min(bucket_adjust_factor, old_bucket_adjust_factor / 2);
+      nack_state = 0;
+      RTC_LOG(LS_INFO) << "NACK state";
+    } else safe_queue_packets = predicted_queue_packets;
+  } else if (predicted_queue_packets > 3 || check_times == -1 || ++check_times < 3) {  // Additive increase
+    if (current_available_token <= 0) bucket_adjust_factor += 0.05; 
+    if (check_times == -1) additive_increase_value = init_bucket_size * bucket_adjust_factor;  // After fast recovery
+    else if (predicted_queue_packets > 3) check_times = 0;
+    RTC_LOG(LS_INFO) << "predicted_queue_packets: " << predicted_queue_packets
+                     << " additive_increase_value: " << additive_increase_value
+                     << " check_times: " << check_times;
+  } else {  // Fast recovery
+    check_times = -1;
+    int new_bucket_size = std::min(
+      additive_increase_value, static_cast<int>((safe_queue_packets - predicted_queue_packets) * 1200 * 0.8)
+    );
+    new_bucket_size = std::max(new_bucket_size, token_bucket_size);
+    if (new_bucket_size > init_bucket_size)
+      bucket_adjust_factor = static_cast<double>(new_bucket_size) /
+                             static_cast<double>(init_bucket_size);
+    else bucket_adjust_factor = 1.0;
+    RTC_LOG(LS_INFO) << "additive_increase_value: " << additive_increase_value
+                     << " safe_queue_packets: " << safe_queue_packets 
+                     << " predicted_queue_packets: " << predicted_queue_packets
+                     << " new_bucket_size: " << new_bucket_size 
+                     << " check_times: " << check_times;
+  }
+  RTC_LOG(LS_INFO) << "bucket_adjust_factor: " << bucket_adjust_factor * 10;
+  token_bucket_size = init_bucket_size * bucket_adjust_factor;
+  RTC_LOG(LS_INFO) << "init_bucket_size: " << init_bucket_size;
+  RTC_LOG(LS_INFO) << "__token_bucket_size__: " << token_bucket_size;
+  current_available_token = token_bucket_size;
+#endif
+
+  log_encoded_time = rtc::TimeUTCMicros();
+  // md5_str = get_md5_from_encoded_image(encoded_image);
+
+#if AV1_ENCODING
+  f_size = encoded_image.size() - 2;
+#else
+  f_size = encoded_image.size();
+#endif
 
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info
@@ -2276,6 +2355,8 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
                                           uint8_t fraction_lost,
                                           int64_t round_trip_time_ms,
                                           double cwnd_reduce_ratio) {
+  link_allocation = link_allocation * FACTOR;
+  target_bitrate = target_bitrate * FACTOR;
   RTC_DCHECK_GE(link_allocation, target_bitrate);
   if (!encoder_queue_.IsCurrent()) {
     encoder_queue_.PostTask([this, target_bitrate, stable_target_bitrate,

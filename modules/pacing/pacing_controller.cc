@@ -21,8 +21,14 @@
 #include "modules/pacing/interval_budget.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/ace.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
+
+// Hash map 
+#include <unordered_map>
+// deque
+
 
 namespace webrtc {
 namespace {
@@ -82,6 +88,7 @@ PacingController::PacingController(Clock* clock,
       prober_(field_trials_),
       probing_send_failure_(false),
       last_process_time_(clock->CurrentTime()),
+      last_process_time2_(clock->CurrentTime()),
       last_send_time_(last_process_time_),
       seen_first_packet_(false),
       packet_queue_(/*creation_time=*/last_process_time_),
@@ -95,7 +102,12 @@ PacingController::PacingController(Clock* clock,
                            "pushback experiment must be enabled.";
   }
 }
+#if ACTION
+int init_bucket_size = 0;  // Bytes
+int current_available_token = 0;
+bool bursty_sending = false;
 
+#endif
 PacingController::~PacingController() = default;
 
 void PacingController::CreateProbeClusters(
@@ -160,6 +172,7 @@ void PacingController::SetProbingEnabled(bool enabled) {
   prober_.SetEnabled(enabled);
 }
 
+// bool full_start = true;
 void PacingController::SetPacingRates(DataRate pacing_rate,
                                       DataRate padding_rate) {
   static constexpr DataRate kMaxRate = DataRate::KilobitsPerSec(100'000);
@@ -180,13 +193,28 @@ void PacingController::SetPacingRates(DataRate pacing_rate,
   }
   pacing_rate_ = pacing_rate;
   padding_rate_ = padding_rate;
-  MaybeUpdateMediaRateDueToLongQueue(CurrentTime());
+#if ACTION
+  // token_bucket_rate = pacing_rate.kbps();
+  init_bucket_size = static_cast<double>(pacing_rate.kbps()) / 30.0 / 8.0 * 1000;  // Byte for one frame
 
-  RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps=" << pacing_rate_.kbps()
+#endif
+  MaybeUpdateMediaRateDueToLongQueue(CurrentTime());
+  RTC_LOG(LS_VERBOSE) << "bwe: pacer_updated pacing_kbps=" << pacing_rate_.kbps()
                       << " padding_budget_kbps=" << padding_rate.kbps();
 }
 
+Timestamp last_time = Timestamp::MinusInfinity();
+#if ACTION
+int bursty_size = 0;
+extern int predicted_queue_packets;
+#endif
+
 void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
+
+  // uint32_t push_time = CurrentTime().us();
+  // uint32_t ts = packet->Timestamp();
+  // RTC_LOG(LS_INFO) << "PUSH " << ts << " " << push_time;
+
   RTC_DCHECK(pacing_rate_ > DataRate::Zero())
       << "SetPacingRate must be called before InsertPacket.";
   RTC_CHECK(packet->packet_type());
@@ -227,6 +255,8 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
 
   // Queue length has increased, check if we need to change the pacing rate.
   MaybeUpdateMediaRateDueToLongQueue(now);
+
+
 }
 
 void PacingController::SetAccountForAudioPackets(bool account_for_audio) {
@@ -343,6 +373,8 @@ Timestamp PacingController::NextSendTime() const {
     // debt is allowed to grow up to one packet more than what can be sent
     // during 'send_burst_period_'.
     TimeDelta drain_time = media_debt_ / adjusted_media_rate_;
+    // RTC_LOG(LS_VERBOSE) << "drain_time: " << media_debt_bytes;
+
     next_send_time =
         last_process_time_ +
         ((send_burst_interval_ > drain_time) ? TimeDelta::Zero() : drain_time);
@@ -378,6 +410,18 @@ void PacingController::ProcessPackets() {
   absl::Cleanup cleanup = [packet_sender = packet_sender_] {
     packet_sender->OnBatchComplete();
   };
+
+#if ACTION
+  if (current_available_token > 0) {
+    bursty_sending = true;
+    adjusted_media_rate_ = pacing_rate_ * 100; // allow bursty sending
+  }
+  else {
+    bursty_sending = false;
+    adjusted_media_rate_ = pacing_rate_; // paced sending
+  }
+#endif
+  // adjusted_media_rate_ = pacing_rate_ * 100;
   const Timestamp now = CurrentTime();
   Timestamp target_send_time = now;
 
@@ -408,6 +452,7 @@ void PacingController::ProcessPackets() {
       prober_.is_probing() ? kMaxEarlyProbeProcessing : TimeDelta::Zero();
 
   target_send_time = NextSendTime();
+
   if (now + early_execute_margin < target_send_time) {
     // We are too early, but if queue is empty still allow draining some debt.
     // Probing is allowed to be sent up to kMinSleepTime early.
@@ -444,6 +489,16 @@ void PacingController::ProcessPackets() {
   for (; iteration < circuit_breaker_threshold_; ++iteration) {
     // Fetch packet, so long as queue is not empty or budget is not
     // exhausted.
+#if ACTION
+    if (current_available_token > 0) {
+      bursty_sending = true;
+      adjusted_media_rate_ = pacing_rate_ * 100;
+    }
+    else {
+      bursty_sending = false;
+      adjusted_media_rate_ = pacing_rate_;
+    }
+#endif
     std::unique_ptr<RtpPacketToSend> rtp_packet =
         GetPendingPacket(pacing_info, target_send_time, now);
     if (rtp_packet == nullptr) {
@@ -486,8 +541,19 @@ void PacingController::ProcessPackets() {
         packet_size += DataSize::Bytes(rtp_packet->headers_size()) +
                        transport_overhead_per_packet_;
       }
+      // uint32_t pop_time = CurrentTime().us();
+      // uint32_t ts = rtp_packet->Timestamp();
 
+      // RTC_LOG(LS_INFO) << "POP " << ts << " " << pop_time;
       packet_sender_->SendPacket(std::move(rtp_packet), pacing_info);
+#if ACTION
+      // Consume token when sending with bursts
+      if (bursty_sending) {
+        current_available_token -= packet_size.bytes();
+      }
+      // log tokens and bucket size
+      RTC_LOG(LS_INFO) << "Availabel Tokens: " << current_available_token;
+#endif
       for (auto& packet : packet_sender_->FetchFec()) {
         EnqueuePacket(std::move(packet));
       }
@@ -496,7 +562,7 @@ void PacingController::ProcessPackets() {
 
       // Send done, update send time.
       OnPacketSent(packet_type, packet_size, now);
-
+      
       if (is_probing) {
         pacing_info.probe_cluster_bytes_sent += packet_size.bytes();
         // If we are currently probing, we need to stop the send loop when we
