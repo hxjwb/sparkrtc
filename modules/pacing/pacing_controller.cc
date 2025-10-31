@@ -30,8 +30,6 @@
 // deque
 
 
-
-#define PACTIONP 0
 namespace webrtc {
 namespace {
 constexpr TimeDelta kCongestedPacketInterval = TimeDelta::Millis(500);
@@ -60,9 +58,7 @@ const TimeDelta PacingController::kMaxPaddingReplayDuration =
     TimeDelta::Millis(50);
 const TimeDelta PacingController::kMaxEarlyProbeProcessing =
     TimeDelta::Millis(1);
-#if PACTIONP
-std::deque<double>* standing_rtt_history;
-#endif
+
 PacingController::PacingController(Clock* clock,
                                    PacketSender* packet_sender,
                                    const FieldTrialsView& field_trials)
@@ -101,18 +97,14 @@ PacingController::PacingController(Clock* clock,
       account_for_audio_(false),
       include_overhead_(false),
       circuit_breaker_threshold_(1 << 16) {
-#if PACTIONP
-  standing_rtt_history = new std::deque<double>;
-#endif
   if (!drain_large_queues_) {
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
   }
 }
 #if ACTION
-int token_bucket_size = 0;  // Bytes
+int init_bucket_size = 0;  // Bytes
 int current_available_token = 0;
-// int token_bucket_rate = 3000;  // 3kbps
 bool bursty_sending = false;
 
 #endif
@@ -203,13 +195,11 @@ void PacingController::SetPacingRates(DataRate pacing_rate,
   padding_rate_ = padding_rate;
 #if ACTION
   // token_bucket_rate = pacing_rate.kbps();
-  token_bucket_size = pacing_rate.kbps() / 30 / 8 * 1000;  // Byte for one frame
+  init_bucket_size = static_cast<double>(pacing_rate.kbps()) / 30.0 / 8.0 * 1000;  // Byte for one frame
 
 #endif
   MaybeUpdateMediaRateDueToLongQueue(CurrentTime());
-  RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps=" << pacing_rate.kbps()
-                      << " padding_budget_kbps=" << padding_rate.kbps();
-  RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps=" << pacing_rate_.kbps()
+  RTC_LOG(LS_VERBOSE) << "bwe: pacer_updated pacing_kbps=" << pacing_rate_.kbps()
                       << " padding_budget_kbps=" << padding_rate.kbps();
 }
 
@@ -219,32 +209,11 @@ int bursty_size = 0;
 extern int predicted_queue_packets;
 #endif
 
-#if PACTIONP
-extern int minimum_action;
-#endif
-
-
 void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
 
   // uint32_t push_time = CurrentTime().us();
   // uint32_t ts = packet->Timestamp();
   // RTC_LOG(LS_INFO) << "PUSH " << ts << " " << push_time;
-  
-
-#if 0
-  
-  if (packet->packet_type() == RtpPacketMediaType::kVideo) {
-    int packet_size =  packet->payload_size();
-    if (packet_size < current_available_token) {
-      current_available_token -= packet_size;
-      bursty_sending = true;
-    }
-    else {
-      bursty_sending = false;
-    }
-  }
-
-#endif
 
   RTC_DCHECK(pacing_rate_ > DataRate::Zero())
       << "SetPacingRate must be called before InsertPacket.";
@@ -403,62 +372,7 @@ Timestamp PacingController::NextSendTime() const {
     // If packets are allowed to be sent in a burst, the
     // debt is allowed to grow up to one packet more than what can be sent
     // during 'send_burst_period_'.
-#if 0
-  //   Timestamp current_ts = CurrentTime();
-
-  // if (last_time == Timestamp::MinusInfinity()) {
-  //   last_time = current_ts;
-  //   current_available_token = token_bucket_size;  // full bucket when start
-  // }
-  // if (current_ts != last_time) {
-  //   TimeDelta elapsed_time = current_ts - last_time;
-
-  //   RTC_LOG(LS_INFO) << "PacingController::EnqueuePacket: elapsed_time = "
-  //                    << elapsed_time.us();
-
-  //   RTC_LOG(LS_INFO) << "token_bucket_rate" << token_bucket_rate;
-  //   // add tokens to the bucket
-  //   double token_to_add =
-  //       elapsed_time.us() * token_bucket_rate / 1000000 / 8;  // Byte
-  //   current_available_token += token_to_add;
-
-  //   // upper bound
-  //   if (current_available_token > token_bucket_size) {
-  //     current_available_token = token_bucket_size;
-  //   }
-
-  //   // RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-  //   RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
-  //   RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-  // }
-#endif
-  TimeDelta drain_time = media_debt_ / adjusted_media_rate_;
-#if 0
-  RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
-  RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-  if (current_available_token < bursty_size) {
-    bursty_sending = false;
-  }
-  else {
-    bursty_sending = true;
-  }
-  if (bursty_sending) {
-    // drain time = 0 when there is enough token
-    drain_time = TimeDelta::Zero();
-  }
-  
-#endif
-    
-#if 0
-  bursty_sending = false;
-  if (current_available_token > 0) {
-    bursty_sending = true;
-    drain_time = TimeDelta::Zero();
-    // RTC_LOG(LS_INFO) << "bursty sending";
-  }
-  RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-  RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
-#endif
+    TimeDelta drain_time = media_debt_ / adjusted_media_rate_;
     // RTC_LOG(LS_VERBOSE) << "drain_time: " << media_debt_bytes;
 
     next_send_time =
@@ -493,44 +407,8 @@ Timestamp PacingController::NextSendTime() const {
 }
 
 //History standing_rtt
-#if PACTIONP
 
-
-double adaptive_factor = 2;
-#endif
 void PacingController::ProcessPackets() {
-#if PACTIONP
-    double standing_rtt = minimum_action;
-
-    standing_rtt_history->push_back(standing_rtt);
-
-    if (standing_rtt_history->size() > 4) {
-      standing_rtt_history->pop_front();
-    }
-    
-    // if standing_rtt is increasing, Multiplicative decrease
-    if (standing_rtt_history->size() == 4) {
-      // get the difference between the first and last element
-      double diff = standing_rtt_history->back() - standing_rtt_history->front();
-      if (diff > 5) {
-        adaptive_factor /= 2;
-        if(adaptive_factor < 0.5) adaptive_factor = 0.5; // cap the factor
-      // if average < 5 or the difference is less than 5, then increase the rate
-      }else if (diff < -5 || standing_rtt < 5) {
-        // Additive increase
-        adaptive_factor += 0.01;
-        if(adaptive_factor > 2) adaptive_factor = 2; // cap the factor
-      }
-    }
-
-    
-    
-   
-    RTC_LOG(LS_INFO) << "LOGACTION " << int(adaptive_factor * 100);
-    adjusted_media_rate_ = pacing_rate_ * adaptive_factor;
-
-  
-#endif
 
   absl::Cleanup cleanup = [packet_sender = packet_sender_] {
     packet_sender->OnBatchComplete();
@@ -615,14 +493,14 @@ void PacingController::ProcessPackets() {
     // Fetch packet, so long as queue is not empty or budget is not
     // exhausted.
 #if ACTION
-      if (current_available_token > 0) {
-    bursty_sending = true;
-    adjusted_media_rate_ = pacing_rate_ * 100;
-  }
-  else {
-    bursty_sending = false;
-    adjusted_media_rate_ = pacing_rate_;
-  }
+    if (current_available_token > 0) {
+      bursty_sending = true;
+      adjusted_media_rate_ = pacing_rate_ * 100; // If we don't control it, allow bursty sending
+    }
+    else {
+      bursty_sending = false;
+      adjusted_media_rate_ = pacing_rate_;
+    }
 #endif
     std::unique_ptr<RtpPacketToSend> rtp_packet =
         GetPendingPacket(pacing_info, target_send_time, now);
@@ -677,8 +555,7 @@ void PacingController::ProcessPackets() {
         current_available_token -= packet_size.bytes();
       }
       // log tokens and bucket size
-      // RTC_LOG(LS_INFO) << "Tokens: " << current_available_token / 1500;
-      // RTC_LOG(LS_INFO) << "Bucket Size: " << token_bucket_size / 1500;
+      RTC_LOG(LS_INFO) << "Tokens: " << current_available_token;
 #endif
       for (auto& packet : packet_sender_->FetchFec()) {
         EnqueuePacket(std::move(packet));
