@@ -177,6 +177,9 @@ void FlexfecReceiver::ProcessReceivedPacket(
     // TODO(brandtr): Update here when we support protecting audio packets too.
     parsed_packet.set_payload_type_frequency(kVideoPayloadTypeFrequency);
     recovered_packet_receiver_->OnRecoveredPacket(parsed_packet);
+    RTC_LOG(LS_INFO) << "[FEC] FlexFEC recovered packet seq "
+                     << parsed_packet.SequenceNumber() << " SSRC "
+                     << parsed_packet.Ssrc();
 
     // Periodically log the incoming packets at LS_INFO.
     Timestamp now = clock_->CurrentTime();

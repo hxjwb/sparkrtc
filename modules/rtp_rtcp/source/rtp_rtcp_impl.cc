@@ -370,6 +370,23 @@ bool ModuleRtpRtcpImpl::TrySendPacket(std::unique_ptr<RtpPacketToSend> packet,
       rtp_sender_->sequencer_.Sequence(*packet);
     }
   }
+  // Log send-side FEC packets right before sending.
+  if (packet->packet_type() == RtpPacketMediaType::kForwardErrorCorrection) {
+    const bool is_ulpfec_red =
+        (packet->Ssrc() == rtp_sender_->packet_generator.SSRC());
+    if (is_ulpfec_red) {
+      // ULPFEC is encapsulated in RED with media SSRC.
+      RTC_LOG(LS_INFO) << "[FEC] Send ULPFEC/RED seq "
+                       << packet->SequenceNumber() << " SSRC " << packet->Ssrc()
+                       << " PT " << static_cast<int>(packet->PayloadType());
+    } else {
+      // FlexFEC uses separate SSRC.
+      RTC_LOG(LS_INFO) << "[FEC] Send FlexFEC seq "
+                       << packet->SequenceNumber() << " SSRC " << packet->Ssrc()
+                       << " PT " << static_cast<int>(packet->PayloadType());
+    }
+  }
+
   rtp_sender_->packet_sender.SendPacket(packet.get(), pacing_info);
   return true;
 }
@@ -660,6 +677,14 @@ void ModuleRtpRtcpImpl::OnReceivedNack(
   if (!StorePackets() || nack_sequence_numbers.empty()) {
     return;
   }
+
+  // Log requested sequence numbers from NACK.
+  RTC_LOG(LS_INFO) << "Received NACK for " << nack_sequence_numbers.size()
+                   << " packets";
+  for (uint16_t seq_no : nack_sequence_numbers) {
+    RTC_LOG(LS_INFO) << "NACK requested sequence: " << seq_no;
+  }
+
   // Use RTT from RtcpRttStats class if provided.
   int64_t rtt = rtt_ms();
   if (rtt == 0) {

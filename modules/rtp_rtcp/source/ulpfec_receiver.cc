@@ -246,6 +246,9 @@ void UlpfecReceiver::ProcessReceivedFec() {
     }
     parsed_packet.set_recovered(true);
     recovered_packet_callback_->OnRecoveredPacket(parsed_packet);
+    RTC_LOG(LS_INFO) << "[FEC] ULPFEC recovered packet seq "
+                     << parsed_packet.SequenceNumber() << " SSRC "
+                     << parsed_packet.Ssrc();
   }
 }
 

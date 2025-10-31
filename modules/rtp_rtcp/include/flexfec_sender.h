@@ -74,6 +74,9 @@ class FlexfecSender : public VideoFecGenerator {
   // Only called on the VideoSendStream queue, after operation has shut down.
   absl::optional<RtpState> GetRtpState() override;
 
+  // Sets measured network RTT (ms) to adapt redundancy.
+  void SetNetworkRttMs(int64_t rtt_ms);
+
  private:
   // Utility.
   Clock* const clock_;
@@ -97,6 +100,9 @@ class FlexfecSender : public VideoFecGenerator {
 
   mutable Mutex mutex_;
   BitrateTracker fec_bitrate_ RTC_GUARDED_BY(mutex_);
+
+  // Latest network RTT in milliseconds for adaptive FEC.
+  int64_t network_rtt_ms_ = -1;
 };
 
 }  // namespace webrtc
