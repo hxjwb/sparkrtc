@@ -24,6 +24,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/message_bus.h"
 
 namespace webrtc {
 
@@ -98,8 +99,7 @@ FlexfecSender::FlexfecSender(
       rtp_header_extension_map_(
           RegisterSupportedExtensions(rtp_header_extensions)),
       header_extensions_size_(
-          RtpHeaderExtensionSize(extension_sizes, rtp_header_extension_map_)),
-      fec_bitrate_(/*max_window_size=*/TimeDelta::Seconds(1)) {
+          RtpHeaderExtensionSize(extension_sizes, rtp_header_extension_map_)) {
   // This object should not have been instantiated if FlexFEC is disabled.
   RTC_DCHECK_GE(payload_type, 0);
   RTC_DCHECK_LE(payload_type, 127);
@@ -112,6 +112,9 @@ FlexfecSender::~FlexfecSender() = default;
 void FlexfecSender::SetProtectionParameters(
     const FecProtectionParams& delta_params,
     const FecProtectionParams& key_params) {
+  MutexLock lock(&mutex_);
+  delta_params_ = delta_params;
+  key_params_ = key_params;
   ulpfec_generator_.SetProtectionParameters(delta_params, key_params);
 }
 
@@ -119,6 +122,21 @@ void FlexfecSender::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
   // TODO(brandtr): Generalize this SSRC check when we support multistream
   // protection.
   RTC_DCHECK_EQ(packet.Ssrc(), protected_media_ssrc_);
+
+  MutexLock lock(&mutex_);
+  frame_size_ = MessageBus::GetInstance().GetMessage("frame_size");
+
+  FecProtectionParams new_delta_params = delta_params_;
+  FecProtectionParams new_key_params = key_params_;
+
+  if (frame_size_ && *frame_size_ > 1000) {
+    new_delta_params.fec_rate = new_delta_params.fec_rate / 2;
+    new_key_params.fec_rate = new_key_params.fec_rate / 2;
+    ulpfec_generator_.SetProtectionParameters(new_delta_params, new_key_params);
+  } else {
+    ulpfec_generator_.SetProtectionParameters(delta_params_, key_params_);
+  }
+
   ulpfec_generator_.AddPacketAndGenerateFec(packet);
 }
 
@@ -126,7 +144,7 @@ std::vector<std::unique_ptr<RtpPacketToSend>> FlexfecSender::GetFecPackets() {
   RTC_CHECK_RUNS_SERIALIZED(&ulpfec_generator_.race_checker_);
   std::vector<std::unique_ptr<RtpPacketToSend>> fec_packets_to_send;
   fec_packets_to_send.reserve(ulpfec_generator_.generated_fec_packets_.size());
-  size_t total_fec_data_bytes = 0;
+  
   for (const auto* fec_packet : ulpfec_generator_.generated_fec_packets_) {
     std::unique_ptr<RtpPacketToSend> fec_packet_to_send(
         new RtpPacketToSend(&rtp_header_extension_map_));
@@ -161,7 +179,7 @@ std::vector<std::unique_ptr<RtpPacketToSend>> FlexfecSender::GetFecPackets() {
         fec_packet_to_send->AllocatePayload(fec_packet->data.size());
     memcpy(payload, fec_packet->data.cdata(), fec_packet->data.size());
 
-    total_fec_data_bytes += fec_packet_to_send->size();
+    
     fec_packets_to_send.push_back(std::move(fec_packet_to_send));
   }
 
@@ -179,7 +197,7 @@ std::vector<std::unique_ptr<RtpPacketToSend>> FlexfecSender::GetFecPackets() {
   }
 
   MutexLock lock(&mutex_);
-  fec_bitrate_.Update(total_fec_data_bytes, now);
+  
 
   return fec_packets_to_send;
 }
@@ -189,10 +207,7 @@ size_t FlexfecSender::MaxPacketOverhead() const {
   return header_extensions_size_ + kFlexfecMaxHeaderSize;
 }
 
-DataRate FlexfecSender::CurrentFecRate() const {
-  MutexLock lock(&mutex_);
-  return fec_bitrate_.Rate(clock_->CurrentTime()).value_or(DataRate::Zero());
-}
+
 
 absl::optional<RtpState> FlexfecSender::GetRtpState() {
   RtpState rtp_state;

@@ -69,7 +69,7 @@ class FlexfecSender : public VideoFecGenerator {
   // Returns the overhead, per packet, for FlexFEC.
   size_t MaxPacketOverhead() const override;
 
-  DataRate CurrentFecRate() const override;
+
 
   // Only called on the VideoSendStream queue, after operation has shut down.
   absl::optional<RtpState> GetRtpState() override;
@@ -96,7 +96,10 @@ class FlexfecSender : public VideoFecGenerator {
   const size_t header_extensions_size_;
 
   mutable Mutex mutex_;
-  BitrateTracker fec_bitrate_ RTC_GUARDED_BY(mutex_);
+  
+  absl::optional<int> frame_size_ RTC_GUARDED_BY(mutex_);
+  FecProtectionParams delta_params_ RTC_GUARDED_BY(mutex_);
+  FecProtectionParams key_params_ RTC_GUARDED_BY(mutex_);
 };
 
 }  // namespace webrtc

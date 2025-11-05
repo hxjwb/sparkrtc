@@ -48,6 +48,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/ace.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/message_bus.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/trace_event.h"
@@ -2156,6 +2157,7 @@ int check_times = -1;
 EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
+  MessageBus::GetInstance().PostMessage("frame_size", static_cast<int>(encoded_image.size()));
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
 #if ACTION
