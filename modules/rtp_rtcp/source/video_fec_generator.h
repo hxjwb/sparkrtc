@@ -32,7 +32,7 @@ class VideoFecGenerator {
   // Returns the overhead, in bytes per packet, for FEC (and possibly RED).
   virtual size_t MaxPacketOverhead() const = 0;
   // Current rate of FEC packets generated, including all RTP-level headers.
-  virtual DataRate CurrentFecRate() const { return DataRate::Zero(); }
+  virtual DataRate CurrentFecRate() const = 0;
   // Set FEC rates, max frames before FEC is sent, and type of FEC masks.
   virtual void SetProtectionParameters(
       const FecProtectionParams& delta_params,
