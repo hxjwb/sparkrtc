@@ -17,6 +17,7 @@
 // #define VBV 4
 #define CBR 0
 #include "modules/video_coding/codecs/h264/x264_encoder_impl.h"
+#include "rtc_base/message_bus.h"
 
 #include <algorithm>
 #include <limits>
@@ -841,7 +842,8 @@ int64_t encode_end_time = rtc::TimeNanos();
     // Encoder can skip frames to save bandwidth in which case
     // `encoded_images_[i]._length` == 0.
     if (encoded_images_[i].size() > 0) {
-      // Parse QP.
+      MessageBus::GetInstance().PostMessage("frameSize", encoded_images_[i].size());
+
       h264_bitstream_parser_.ParseBitstream(encoded_images_[i]);
       encoded_images_[i].qp_ =
           h264_bitstream_parser_.GetLastSliceQp().value_or(-1);

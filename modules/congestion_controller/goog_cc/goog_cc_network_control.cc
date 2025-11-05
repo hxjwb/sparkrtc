@@ -9,6 +9,7 @@
  */
 
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
+#include "rtc_base/message_bus.h"
 
 #include <stdio.h>
 
@@ -710,6 +711,8 @@ void GoogCcNetworkController::MaybeTriggerOnNetworkChanged(
     RTC_LOG(LS_INFO) << "bwe " << at_time.ms() << " pushback_target_bps="
                         << last_pushback_target_rate_.bps()
                         << " estimate_bps=" << loss_based_target_rate.bps();
+    int frame_size = MessageBus::GetInstance().GetMessage("frameSize").value_or(0);
+    RTC_LOG(LS_INFO) << "Received frame size: " << frame_size;
   }
 }
 
