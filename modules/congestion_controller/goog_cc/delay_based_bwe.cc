@@ -217,7 +217,7 @@ void DelayBasedBwe::IncomingPacketFeedback(const PacketResult& packet_feedback,
     int burst_duration_ms = current_burst_last_recv_time_ms - current_burst_first_recv_time_ms;
     int burst_size = current_burst_size;
 
-    RTC_LOG(LS_INFO) << "Burst Duration: " << burst_duration_ms << " ms" << " Burst Size: " << burst_size << " bytes";
+    // RTC_LOG(LS_INFO) << "Burst Duration: " << burst_duration_ms << " ms" << " Burst Size: " << burst_size << " bytes";
     // RTC_LOG(LS_INFO) << "Burst count: " << current_burst_packet_counter;
 
     if (burst_duration_ms >= 4 && burst_size > 0 && current_burst_packet_counter > 0) { 
