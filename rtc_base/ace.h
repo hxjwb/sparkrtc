@@ -1,3 +1,2 @@
-
 #define ACTION 0
-#define VBV 10
+#define VBV 4

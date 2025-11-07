@@ -112,29 +112,7 @@ FlexfecSender::~FlexfecSender() = default;
 void FlexfecSender::SetProtectionParameters(
     const FecProtectionParams& delta_params,
     const FecProtectionParams& key_params) {
-  // Apply RTT-based adaptation before forwarding to generator.
-  FecProtectionParams adjusted_delta = delta_params;
-  FecProtectionParams adjusted_key = key_params;
-
-  if (network_rtt_ms_ >= 0) {
-    // Simple mapping: larger RTT -> higher redundancy, within [0, 255].
-    // Tune breakpoints conservatively; avoid extreme overhead.
-    auto adapt_rate = [](int64_t rtt_ms, int base_rate) {
-      int rate = base_rate;
-      if (rtt_ms >= 30) {
-        
-        rate = std::min(255, base_rate + 60);  
-      } else if (rtt_ms <= 20) {
-        rate = std::max(0, base_rate - 10);
-      }
-      return rate;
-    };
-
-    adjusted_delta.fec_rate = adapt_rate(network_rtt_ms_, delta_params.fec_rate);
-    adjusted_key.fec_rate = adapt_rate(network_rtt_ms_, key_params.fec_rate);
-  }
-
-  ulpfec_generator_.SetProtectionParameters(adjusted_delta, adjusted_key);
+  ulpfec_generator_.SetProtectionParameters(delta_params, key_params);
 }
 
 void FlexfecSender::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
@@ -221,10 +199,6 @@ absl::optional<RtpState> FlexfecSender::GetRtpState() {
   rtp_state.sequence_number = seq_num_;
   rtp_state.start_timestamp = timestamp_offset_;
   return rtp_state;
-}
-
-void FlexfecSender::SetNetworkRttMs(int64_t rtt_ms) {
-  network_rtt_ms_ = rtt_ms;
 }
 
 }  // namespace webrtc

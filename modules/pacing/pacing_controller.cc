@@ -191,7 +191,7 @@ void PacingController::SetPacingRates(DataRate pacing_rate,
                         << " kbps, padding = " << padding_rate.kbps()
                         << " kbps.";
   }
-  pacing_rate_ = pacing_rate * 1.5;
+  pacing_rate_ = pacing_rate;
   padding_rate_ = padding_rate;
 #if ACTION
   // token_bucket_rate = pacing_rate.kbps();

@@ -164,13 +164,6 @@ void UlpfecGenerator::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
       RTC_LOG(LS_INFO) << "FEC generated with " << media_packets_.size()
                        << " media packets, producing "
                        << generated_fec_packets_.size() << " FEC packets.";
-      for (const auto& media_packet : media_packets_) {
-        if (media_packet->data.size() >= 8) {
-          uint32_t timestamp =
-              ByteReader<uint32_t>::ReadBigEndian(&media_packet->data.data()[4]);
-          RTC_LOG(LS_INFO) << "  -> Media packet timestamp: " << timestamp;
-        }
-      }
     }
     if (generated_fec_packets_.empty()) {
       ResetState();
