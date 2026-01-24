@@ -239,6 +239,7 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
       const std::vector<uint16_t>& nack_sequence_numbers) override;
   void OnReceivedRtcpReportBlocks(
       rtc::ArrayView<const ReportBlockData> report_blocks) override;
+  void OnStallReport(const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays) override;
   void OnRequestSendReport() override;
 
   void SetVideoBitrateAllocation(
@@ -318,6 +319,8 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   // The processed RTT from RtcpRttStats.
   mutable Mutex mutex_rtt_;
   int64_t rtt_ms_ RTC_GUARDED_BY(mutex_rtt_);
+
+  TwccTimeCorrelator* const twcc_time_correlator_;
 
   RTC_NO_UNIQUE_ADDRESS ScopedTaskSafety task_safety_;
 };

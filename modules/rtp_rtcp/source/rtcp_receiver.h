@@ -57,6 +57,14 @@ class RTCPReceiver final {
         const std::vector<uint16_t>& nack_sequence_numbers) = 0;
     virtual void OnReceivedRtcpReportBlocks(
         rtc::ArrayView<const ReportBlockData> report_blocks) = 0;
+    
+    // Handle stall report
+    struct DecodeDelayInfo {
+      uint32_t rtp_timestamp;
+      uint64_t decode_delay_us;
+      uint64_t assemble_to_decode_us;
+    };
+    virtual void OnStallReport(const std::vector<DecodeDelayInfo>& decode_delays) = 0;
 
    protected:
     virtual ~ModuleRtpRtcp() = default;

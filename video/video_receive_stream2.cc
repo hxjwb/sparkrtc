@@ -199,7 +199,7 @@ VideoReceiveStream2::VideoReceiveStream2(
       stats_proxy_(remote_ssrc(), clock_, call->worker_thread()),
       rtp_receive_statistics_(ReceiveStatistics::Create(clock_)),
       timing_(std::move(timing)),
-      video_receiver_(clock_, timing_.get(), call->trials()),
+  video_receiver_(clock_, timing_.get(), call->trials(), this),
       rtp_video_stream_receiver_(call->worker_thread(),
                                  clock_,
                                  &transport_adapter_,
@@ -1085,6 +1085,75 @@ void VideoReceiveStream2::UpdateRtxSsrc(uint32_t ssrc) {
   updated_rtx_ssrc_ = ssrc;
   rtx_receiver_ = receiver_controller_->CreateReceiver(
       rtx_ssrc(), rtx_receive_stream_.get());
+}
+
+void VideoReceiveStream2::OnStallDetected(
+    const std::vector<DecodeDelayInfo>& decode_delays,
+    uint32_t stall_rtp_timestamp) {
+  RTC_LOG(LS_INFO)
+      << "Stall detected in VideoReceiveStream2, sending profiling data for "
+      << decode_delays.size() << " frames, stall rtp timestamp "
+      << stall_rtp_timestamp;
+  
+  // Log the decode delays
+  for (const auto& delay_info : decode_delays) {
+    RTC_LOG(LS_INFO) << "Frame timestamp: " << delay_info.rtp_timestamp
+                     << ", Decode delay: " << delay_info.decode_delay_us / 1000
+                     << " ms, Assemble->Decode: "
+                     << delay_info.assemble_to_decode_us / 1000 << " ms";
+  }
+  
+  // Directly construct and send RTCP APP packet
+  if (decode_delays.empty()) {
+    return;
+  }
+  
+  // Create APP packet
+  rtcp::App app_packet;
+  app_packet.SetSenderSsrc(config_.rtp.local_ssrc);
+  app_packet.SetSubType(1);  // Custom subtype for stall report
+  app_packet.SetName(rtcp::App::NameToInt("STLL"));  // "STLL" for stall report
+  
+  // Serialize stall timestamp + decode delay information
+  rtc::Buffer data_buffer;
+  uint32_t stall_timestamp_nbo = rtc::HostToNetwork32(stall_rtp_timestamp);
+  data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&stall_timestamp_nbo),
+                         sizeof(stall_timestamp_nbo));
+  for (const auto& delay_info : decode_delays) {
+    // Write frame timestamp (4 bytes, network byte order)
+    uint32_t frame_timestamp = delay_info.rtp_timestamp;
+    uint32_t frame_timestamp_nbo = rtc::HostToNetwork32(frame_timestamp);
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&frame_timestamp_nbo), sizeof(frame_timestamp_nbo));
+    // Write decode delay in microseconds (8 bytes, network byte order)
+    uint64_t decode_delay_us = delay_info.decode_delay_us;
+    uint64_t decode_delay_us_nbo = rtc::HostToNetwork64(decode_delay_us);
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&decode_delay_us_nbo), sizeof(decode_delay_us_nbo));
+    // Write assemble-to-decode delay in microseconds (8 bytes, network byte order)
+    uint64_t assemble_to_decode_us = delay_info.assemble_to_decode_us;
+    uint64_t assemble_to_decode_us_nbo = rtc::HostToNetwork64(assemble_to_decode_us);
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&assemble_to_decode_us_nbo),
+                           sizeof(assemble_to_decode_us_nbo));
+  }
+  
+  app_packet.SetData(data_buffer.data(), data_buffer.size());
+  
+  // Serialize and send the packet
+  size_t packet_size = app_packet.BlockLength();
+  rtc::Buffer packet_buffer(packet_size);
+  size_t index = 0;
+  
+  auto callback = [&](rtc::ArrayView<const uint8_t> packet) {
+    // This callback should not be called since we're writing directly to the buffer
+  };
+  
+  bool success = app_packet.Create(packet_buffer.data(), &index, packet_size, callback);
+  
+  if (success && index == packet_size) {
+    transport_adapter_.SendRtcp(rtc::ArrayView<const uint8_t>(packet_buffer.data(), packet_size));
+    RTC_LOG(LS_INFO) << "Sent stall report RTCP APP packet with " << decode_delays.size() << " frame delays";
+  } else {
+    RTC_LOG(LS_WARNING) << "Failed to create stall report RTCP APP packet: success=" << success << ", index=" << index << ", expected=" << packet_size;
+  }
 }
 
 }  // namespace internal

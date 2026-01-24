@@ -2044,7 +2044,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   frame_encode_metadata_writer_.OnEncodeStarted(out_frame);
 
-  log_captured_time = rtc::TimeUTCMicros();
+  log_captured_time = clock_->CurrentTime().us();
 
   const int32_t encode_status = encoder_->Encode(out_frame, &next_frame_types_);
   was_encode_called_since_last_initialization_ = true;
@@ -2205,7 +2205,7 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
   current_available_token = token_bucket_size;
 #endif
 
-  log_encoded_time = rtc::TimeUTCMicros();
+  log_encoded_time = clock_->CurrentTime().us();
   // md5_str = get_md5_from_encoded_image(encoded_image);
 
 #if AV1_ENCODING
@@ -2220,6 +2220,20 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
                                         : VideoCodecType::kVideoCodecGeneric;
   EncodedImage image_copy =
       AugmentEncodedImage(encoded_image, codec_specific_info);
+
+  // Record frame timing information
+  int64_t encode_start_time_ms = log_captured_time / 1000;
+  int64_t encode_start_time_ms_sanitized =
+      encode_start_time_ms > 0 ? encode_start_time_ms : 0;
+  int64_t encode_end_time_ms = log_encoded_time / 1000;
+  if (encode_end_time_ms < encode_start_time_ms_sanitized) {
+    encode_end_time_ms = encode_start_time_ms_sanitized;
+  }
+  
+  // Set encode timing information
+  image_copy.timing_.encode_start_ms = encode_start_time_ms_sanitized;
+  image_copy.timing_.encode_finish_ms = encode_end_time_ms;
+  image_copy.timing_.flags = VideoSendTiming::TimingFrameFlags::kNotTriggered;
 
   // Post a task because `send_codec_` requires `encoder_queue_` lock and we
   // need to update on quality convergence.

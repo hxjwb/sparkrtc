@@ -217,6 +217,10 @@ RtpPacketSender* RtpTransportControllerSend::packet_sender() {
   return &pacer_;
 }
 
+TwccTimeCorrelator* RtpTransportControllerSend::GetTwccTimeCorrelator() {
+  return &twcc_time_correlator_;
+}
+
 void RtpTransportControllerSend::SetAllocatedSendBitrateLimits(
     BitrateAllocationLimits limits) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
@@ -557,6 +561,22 @@ void RtpTransportControllerSend::OnTransportFeedback(
       transport_feedback_adapter_.ProcessTransportFeedback(feedback,
                                                            receive_time);
   if (feedback_msg) {
+    for (const auto& packet_feedback : feedback_msg->packet_feedbacks) {
+      if (!packet_feedback.IsReceived()) {
+        continue;
+      }
+      if (!packet_feedback.rtp_timestamp.has_value()) {
+        continue;
+      }
+      const uint16_t transport_seq =
+          static_cast<uint16_t>(packet_feedback.sent_packet.sequence_number);
+      twcc_time_correlator_.AddPacketInfo(
+          transport_seq, packet_feedback.sent_packet.send_time.us(),
+          packet_feedback.receive_time.us());
+      twcc_time_correlator_.AddRtpTimestampMapping(
+          transport_seq, *packet_feedback.rtp_timestamp);
+    }
+
     if (controller_)
       PostUpdates(controller_->OnTransportPacketsFeedback(*feedback_msg));
 

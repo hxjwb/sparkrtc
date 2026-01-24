@@ -39,6 +39,9 @@ struct PacketFeedback {
 
   // The network route that this packet is associated with.
   rtc::NetworkRoute network_route;
+  
+  // RTP timestamp for this packet (if available)
+  absl::optional<uint32_t> rtp_timestamp;
 };
 
 class InFlightBytesTracker {

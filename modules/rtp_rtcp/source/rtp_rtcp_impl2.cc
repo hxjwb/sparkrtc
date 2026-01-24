@@ -32,6 +32,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/ntp_time.h"
+#include "video/frame_time_window.h"
 
 #ifdef _WIN32
 // Disable warning C4355: 'this' : used in base member initializer list.
@@ -90,7 +91,8 @@ ModuleRtpRtcpImpl2::ModuleRtpRtcpImpl2(const Configuration& configuration)
       nack_last_time_sent_full_ms_(0),
       nack_last_seq_number_sent_(0),
       rtt_stats_(configuration.rtt_stats),
-      rtt_ms_(0) {
+      rtt_ms_(0),
+      twcc_time_correlator_(configuration.twcc_time_correlator) {
   RTC_DCHECK(worker_queue_);
   rtcp_thread_checker_.Detach();
   if (!configuration.receiver_only) {
@@ -698,6 +700,27 @@ void ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks(
         rtp_sender_->packet_generator.OnReceivedAckOnRtxSsrc(
             report_block.extended_highest_sequence_number());
       }
+    }
+  }
+}
+
+void ModuleRtpRtcpImpl2::OnStallReport(const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays) {
+  RTC_LOG(LS_INFO) << "Processing stall report with " << decode_delays.size() << " frames";
+  
+  // Call PrintProfilingInfo if FrameTimeWindow is available
+  if (rtp_sender_) {
+    FrameTimeWindow* frame_time_window = rtp_sender_->packet_sender.GetFrameTimeWindow();
+    if (frame_time_window) {
+      // Convert decode delays to the format expected by PrintProfilingInfo
+      std::vector<webrtc::DecodeDelayInfo> delays;
+      for (const auto& delay_info : decode_delays) {
+        webrtc::DecodeDelayInfo info;
+        info.rtp_timestamp = delay_info.rtp_timestamp;
+        info.decode_delay_us = delay_info.decode_delay_us;
+        info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
+        delays.push_back(info);
+      }
+      frame_time_window->PrintProfilingInfo(delays, twcc_time_correlator_);
     }
   }
 }

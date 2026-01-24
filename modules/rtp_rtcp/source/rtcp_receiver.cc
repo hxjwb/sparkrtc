@@ -135,6 +135,14 @@ struct RTCPReceiver::PacketInformation {
   absl::optional<VideoBitrateAllocation> target_bitrate_allocation;
   absl::optional<NetworkStateEstimate> network_state_estimate;
   std::unique_ptr<rtcp::LossNotification> loss_notification;
+  
+  // Stall report data
+  struct DecodeDelayInfo {
+    uint32_t rtp_timestamp;
+    uint64_t decode_delay_us;
+    uint64_t assemble_to_decode_us;
+  };
+  std::vector<DecodeDelayInfo> stall_report;
 };
 
 RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
@@ -783,6 +791,56 @@ bool RTCPReceiver::HandleApp(const rtcp::CommonHeader& rtcp_block,
     // RemoteEstimate is not a standard RTCP message. Failing to parse it
     // doesn't indicates RTCP packet is invalid. It may indicate sender happens
     // to use the same id for a different message. Thus don't return false.
+  } else if (app.name() == rtcp::App::NameToInt("STLL") && app.sub_type() == 1) {
+    // Handle stall report APP packet
+    const uint8_t* data = app.data();
+    size_t data_size = app.data_size();
+    size_t offset = 0;
+
+    RTC_LOG(LS_INFO) << "Received stall report APP packet with " << data_size
+                     << " bytes of data";
+    if (data_size < 4) {
+      return true;
+    }
+    uint32_t stall_rtp_timestamp =
+        (data[offset] << 24) | (data[offset + 1] << 16) |
+        (data[offset + 2] << 8) | data[offset + 3];
+    RTC_LOG(LS_INFO) << "Stall report: stall rtp timestamp "
+                     << stall_rtp_timestamp;
+    RTC_LOG(LS_INFO) << "PRFL_STALL rtp_ts=" << stall_rtp_timestamp;
+    offset += 4;
+
+    // Parse decode delay information
+    while (offset + 20 <= data_size) {  // 4 bytes for timestamp + 8 bytes for delay + 8 bytes for assemble-to-decode
+      uint32_t frame_timestamp = (data[offset] << 24) | (data[offset+1] << 16) | (data[offset+2] << 8) | data[offset+3];
+      uint64_t decode_delay_us = ((uint64_t)data[offset+4] << 56) | ((uint64_t)data[offset+5] << 48) |
+                                 ((uint64_t)data[offset+6] << 40) | ((uint64_t)data[offset+7] << 32) |
+                                 ((uint64_t)data[offset+8] << 24) | ((uint64_t)data[offset+9] << 16) |
+                                 ((uint64_t)data[offset+10] << 8) | (uint64_t)data[offset+11];
+      uint64_t assemble_to_decode_us =
+          ((uint64_t)data[offset + 12] << 56) |
+          ((uint64_t)data[offset + 13] << 48) |
+          ((uint64_t)data[offset + 14] << 40) |
+          ((uint64_t)data[offset + 15] << 32) |
+          ((uint64_t)data[offset + 16] << 24) |
+          ((uint64_t)data[offset + 17] << 16) |
+          ((uint64_t)data[offset + 18] << 8) |
+          (uint64_t)data[offset + 19];
+      
+      RTC_LOG(LS_INFO) << "Stall report: Frame timestamp " << frame_timestamp
+                       << ", Decode delay " << decode_delay_us / 1000
+                       << " ms, Assemble->Decode "
+                       << assemble_to_decode_us / 1000 << " ms";
+      
+      // Add to stall report
+      PacketInformation::DecodeDelayInfo delay_info;
+      delay_info.rtp_timestamp = frame_timestamp;
+      delay_info.decode_delay_us = decode_delay_us;
+      delay_info.assemble_to_decode_us = assemble_to_decode_us;
+      packet_information->stall_report.push_back(delay_info);
+      
+      offset += 20;
+    }
   }
 
   return true;
@@ -1182,6 +1240,23 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
       packet_information.target_bitrate_allocation) {
     bitrate_allocation_observer_->OnBitrateAllocationUpdated(
         *packet_information.target_bitrate_allocation);
+  }
+
+  // Handle stall report
+  if (!packet_information.stall_report.empty()) {
+    // Pass stall report to owner
+    if (rtp_rtcp_) {
+      // Convert DecodeDelayInfo from PacketInformation to ModuleRtpRtcp format
+      std::vector<ModuleRtpRtcp::DecodeDelayInfo> module_delays;
+      for (const auto& delay_info : packet_information.stall_report) {
+        ModuleRtpRtcp::DecodeDelayInfo info;
+        info.rtp_timestamp = delay_info.rtp_timestamp;
+        info.decode_delay_us = delay_info.decode_delay_us;
+        info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
+        module_delays.push_back(info);
+      }
+      rtp_rtcp_->OnStallReport(module_delays);
+    }
   }
 
   if (!receiver_only_) {

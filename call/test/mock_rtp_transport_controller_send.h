@@ -60,6 +60,7 @@ class MockRtpTransportControllerSend
               (),
               (override));
   MOCK_METHOD(RtpPacketSender*, packet_sender, (), (override));
+  MOCK_METHOD(TwccTimeCorrelator*, GetTwccTimeCorrelator, (), (override));
   MOCK_METHOD(void,
               SetAllocatedSendBitrateLimits,
               (BitrateAllocationLimits),

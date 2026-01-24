@@ -31,9 +31,11 @@ namespace webrtc {
 
 VideoReceiver2::VideoReceiver2(Clock* clock,
                                VCMTiming* timing,
-                               const FieldTrialsView& field_trials)
+                               const FieldTrialsView& field_trials,
+                               StallDetectorObserver* stall_observer)
     : clock_(clock),
-      decoded_frame_callback_(timing, clock_, field_trials),
+      stall_observer_(stall_observer),
+      decoded_frame_callback_(timing, clock_, field_trials, stall_observer),
       codec_database_() {
   decoder_sequence_checker_.Detach();
 }

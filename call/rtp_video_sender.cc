@@ -200,7 +200,8 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     const CryptoOptions& crypto_options,
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
     const FieldTrialsView& trials,
-    TaskQueueFactory* task_queue_factory) {
+    TaskQueueFactory* task_queue_factory,
+    FrameTimeWindow* frame_time_window) {
   RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
   RTC_DCHECK(task_queue_factory);
 
@@ -250,6 +251,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
   for (size_t i = 0; i < rtp_config.ssrcs.size(); ++i) {
     RTPSenderVideo::Config video_config;
     configuration.local_media_ssrc = rtp_config.ssrcs[i];
+    configuration.frame_time_window = frame_time_window;
 
     std::unique_ptr<VideoFecGenerator> fec_generator =
         MaybeCreateFecGenerator(clock, rtp_config, suspended_ssrcs, i, trials);
@@ -263,6 +265,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     configuration.rid = (i < rtp_config.rids.size()) ? rtp_config.rids[i] : "";
 
     configuration.need_rtp_packet_infos = rtp_config.lntf.enabled;
+    configuration.twcc_time_correlator = transport->GetTwccTimeCorrelator();
 
     std::unique_ptr<ModuleRtpRtcpImpl2> rtp_rtcp(
         ModuleRtpRtcpImpl2::Create(configuration));
@@ -397,7 +400,8 @@ RtpVideoSender::RtpVideoSender(
                                           crypto_options,
                                           std::move(frame_transformer),
                                           field_trials_,
-                                          task_queue_factory)),
+                                          task_queue_factory,
+                                          &frame_time_window_)),
       rtp_config_(rtp_config),
       codec_type_(GetVideoCodecType(rtp_config)),
       transport_(transport),
@@ -617,12 +621,17 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
     }
   }
 
-  bool send_result =
-      rtp_streams_[simulcast_index].sender_video->SendEncodedImage(
-          rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,
-          params_[simulcast_index].GetRtpVideoHeader(
-              encoded_image, codec_specific_info, shared_frame_id_),
-          expected_retransmission_time);
+  // Record frame timing information from encoded image
+  int64_t encode_start_time_ms = encoded_image.timing_.encode_start_ms;
+  int64_t encode_end_time_ms = encoded_image.timing_.encode_finish_ms;
+  frame_time_window_.AddFrame(rtp_timestamp, encode_start_time_ms,
+                              encode_end_time_ms);
+
+  bool send_result = rtp_streams_[simulcast_index].sender_video->SendEncodedImage(
+      rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,
+      params_[simulcast_index].GetRtpVideoHeader(
+          encoded_image, codec_specific_info, shared_frame_id_),
+      expected_retransmission_time);
   if (frame_count_observer_) {
     FrameCounts& counts = frame_counts_[simulcast_index];
     if (encoded_image._frameType == VideoFrameType::kVideoFrameKey) {

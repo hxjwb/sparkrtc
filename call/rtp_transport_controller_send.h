@@ -39,6 +39,7 @@
 #include "rtc_base/race_checker.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/task_utils/repeating_task.h"
+#include "video/twcc_time_correlator.h"
 
 namespace webrtc {
 class Clock;
@@ -80,6 +81,7 @@ class RtpTransportControllerSend final
   NetworkStateEstimateObserver* network_state_estimate_observer() override;
   TransportFeedbackObserver* transport_feedback_observer() override;
   RtpPacketSender* packet_sender() override;
+  TwccTimeCorrelator* GetTwccTimeCorrelator() override;
 
   void SetAllocatedSendBitrateLimits(BitrateAllocationLimits limits) override;
 
@@ -165,6 +167,8 @@ class RtpTransportControllerSend final
 
   TransportFeedbackAdapter transport_feedback_adapter_
       RTC_GUARDED_BY(sequence_checker_);
+
+  TwccTimeCorrelator twcc_time_correlator_;
 
   NetworkControllerFactoryInterface* const controller_factory_override_
       RTC_PT_GUARDED_BY(sequence_checker_);

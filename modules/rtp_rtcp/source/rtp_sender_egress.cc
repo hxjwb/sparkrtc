@@ -98,6 +98,7 @@ RtpSenderEgress::RtpSenderEgress(const RtpRtcpInterface::Configuration& config,
       send_packet_observer_(config.send_packet_observer),
       rtp_stats_callback_(config.rtp_stats_callback),
       bitrate_callback_(config.send_bitrate_observer),
+      frame_time_window_(config.frame_time_window),
       media_has_been_sent_(false),
       force_part_of_allocation_(false),
       timestamp_offset_(0),
@@ -151,6 +152,29 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
 #if BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
   BweTestLoggingPlot(now, packet->Ssrc());
 #endif
+
+  // Record packet send time if frame time window is available.
+  if (frame_time_window_ && packet->packet_type().has_value()) {
+    const RtpPacketMediaType packet_type = *packet->packet_type();
+    if (packet_type == RtpPacketMediaType::kVideo ||
+        packet_type == RtpPacketMediaType::kRetransmission) {
+      uint32_t rtp_timestamp = packet->Timestamp();
+      int64_t send_time_ms = now.ms();
+      uint16_t transport_sequence_number = 0;
+      packet->GetExtension<TransportSequenceNumber>(&transport_sequence_number);
+      if (packet_type == RtpPacketMediaType::kRetransmission) {
+        frame_time_window_->AddRetransPacket(rtp_timestamp,
+                                             packet->SequenceNumber(),
+                                             transport_sequence_number,
+                                             send_time_ms);
+      } else {
+        frame_time_window_->AddMediaPacket(rtp_timestamp,
+                                           packet->SequenceNumber(),
+                                           transport_sequence_number,
+                                           send_time_ms);
+      }
+    }
+  }
   if (need_rtp_packet_infos_ &&
       packet->packet_type() == RtpPacketToSend::Type::kVideo) {
     // Last packet of a frame, add it to sequence number info map.

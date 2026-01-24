@@ -35,7 +35,8 @@ class VideoReceiver2 {
  public:
   VideoReceiver2(Clock* clock,
                  VCMTiming* timing,
-                 const FieldTrialsView& field_trials);
+                 const FieldTrialsView& field_trials,
+                 StallDetectorObserver* stall_observer = nullptr);
   ~VideoReceiver2();
 
   void RegisterReceiveCodec(uint8_t payload_type,
@@ -55,6 +56,7 @@ class VideoReceiver2 {
   RTC_NO_UNIQUE_ADDRESS SequenceChecker construction_sequence_checker_;
   RTC_NO_UNIQUE_ADDRESS SequenceChecker decoder_sequence_checker_;
   Clock* const clock_;
+  StallDetectorObserver* const stall_observer_ [[maybe_unused]];
   VCMDecodedFrameCallback decoded_frame_callback_;
   // Callbacks are set before the decoder thread starts.
   // Once the decoder thread has been started, usage of `_codecDataBase` moves

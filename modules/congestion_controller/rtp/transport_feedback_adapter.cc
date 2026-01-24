@@ -96,6 +96,7 @@ void TransportFeedbackAdapter::AddPacket(const RtpPacketSendInfo& packet_info,
   packet.sent.audio = packet_info.packet_type == RtpPacketMediaType::kAudio;
   packet.network_route = network_route_;
   packet.sent.pacing_info = packet_info.pacing_info;
+  packet.rtp_timestamp = packet_info.rtp_timestamp;
 
   while (!history_.empty() &&
          creation_time - history_.begin()->second.creation_time >
@@ -253,6 +254,7 @@ TransportFeedbackAdapter::ProcessTransportFeedbackInner(
           PacketResult result;
           result.sent_packet = packet_feedback.sent;
           result.receive_time = packet_feedback.receive_time;
+          result.rtp_timestamp = packet_feedback.rtp_timestamp;
           packet_result_vector.push_back(result);
         } else {
           ++ignored;

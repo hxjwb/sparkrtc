@@ -30,6 +30,7 @@
 #include "modules/rtp_rtcp/source/rtp_sequence_number_map.h"
 #include "modules/rtp_rtcp/source/video_fec_generator.h"
 #include "system_wrappers/include/ntp_time.h"
+#include "video/frame_time_window.h"
 
 namespace webrtc {
 
@@ -40,6 +41,7 @@ class RtcEventLog;
 class RTPSender;
 class Transport;
 class VideoBitrateAllocationObserver;
+class TwccTimeCorrelator;
 
 class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
  public:
@@ -144,6 +146,12 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
 
     // Enables send packet batching from the egress RTP sender.
     bool enable_send_packet_batching = false;
+
+    // Frame time window for tracking encoding times and packet send times
+    FrameTimeWindow* frame_time_window = nullptr;
+
+    // TWCC time correlator for mapping packet send/receive times.
+    TwccTimeCorrelator* twcc_time_correlator = nullptr;
   };
 
   // Stats for RTCP sender reports (SR) for a specific SSRC.
