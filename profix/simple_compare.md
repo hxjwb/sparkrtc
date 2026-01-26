@@ -11,17 +11,18 @@ for both versions.
 - Stall gaps: any recv gap > 100ms is treated as a stall.
 - Aggregated metrics (stall count, stall duration, stall rate, latency CDF).
 
-## Run
+## Run (Safe, no git stash)
 
 ```bash
-bash profix/run_simple_compare.sh
+python3 profix/run_simple_compare_safe.py --runs 3 --sleep 5 \
+  --out profix/analysis/simple_compare_$(date +%Y%m%d_%H%M%S)
 ```
 
-Optional parameters:
-
-```bash
-bash profix/run_simple_compare.sh --runs 2 --sleep 5 --out profix/analysis/simple_compare
-```
+Notes:
+- This workflow uses `git worktree` for the baseline run, so untracked files
+  will not break the baseline test or stash/unstash.
+- You can still use the legacy `profix/run_simple_compare.sh` if your working
+  tree is clean and has no untracked files, but the safe script is preferred.
 
 ## Outputs
 - `profix/analysis/simple_compare/summary.csv`

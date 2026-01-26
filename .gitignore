@@ -84,6 +84,7 @@
 *.dll
 .aider*
 profix/logs/*
+profix/cases/*
 profix/archive/*
 profix/recon/*
 profix/*.txt

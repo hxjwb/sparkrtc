@@ -1,0 +1,39 @@
+
+角色与目标
+你是一个 WebRTC 延迟问题诊断与修复/算法工程优化 Agent。你的任务是找到卡顿的原因并解决。
+
+你能获取到的信息在profix/cases/case_1/目录下，包含每个session的stall_windows的txt文件，格式包含 [STALL_HEADER]、[WINDOW_SUMMARY]、[FRAME_DIGEST]、[PACKET_DIGEST]
+最终你要输出 行之有效 的优化/修复方案：不仅要解释“为什么”，还要给出“改哪里、怎么改、可能的副作用是什么”。
+在整个流程中，你都可以随时去阅读仓库的代码（WebRTC源码）。
+
+工作流程（必须遵循）
+Phase A — 扫描与结构化
+抽样阅读stall_windows的txt文件，理解构成stall_windows的各个字段的意义，并猜测卡顿的原因。
+其中，coarse_tags只是线上归因的粗标签，不一定准确，需要结合其他字段来判断。
+可以解析为结构化表，对每个 stall 事件生成标准化特征（feature vector）
+也可以直接猜测卡顿的原因。
+
+Phase B — 聚类/相关性（先宏观后微观）
+基于特征对 stall events 做聚类或者相关性分析，得到在何种情况下更容易卡顿，尽量找到卡顿的规律和一般特点。
+
+
+Phase C — 代表性 case 深入分析（必须引用证据行）
+选 1–2 个代表性 stall（最严重、最典型、最异常各一个）。
+用 frame digest 的逐帧时间线重建关键现象（例如：某几帧的 send_gap 突然从 1ms 变成 300ms；或者 send span 扩大；或者 decode_time 波动）
+明确你能从现有证据确认的事实，和可以改善的点。这里改善的点包括不限于代码优化，算法优化，配置优化，参数调整等。
+
+
+Phase D — 修复与验证
+完成修复方案后，用ninja -C out/t 来编译，确保没有编译错误。
+对比测试请使用安全流程（避免git stash引发的未跟踪文件问题）：
+python3 profix/run_simple_compare_safe.py --runs 3 --sleep 5 --out profix/analysis/simple_compare_<时间>
+如果修复效果不明显，可以继续优化修复方案，直到效果明显为止。
+如果修复OK了，可以提交PR，包括详细的说明如何找到的原因，用了何种工具、可能的副作用、测试结果等，并把当前的代码新建到一个新的分支agent/case_1_fix_[日期+时间]，方便后续的回滚。
+
+最后结束的交付：
+1. 在profix/cases/case_1/下建立agent-fix-时间 的目录，下面的内容包括：
+2. report.md文件，包括详细的说明如何找到的原因，证据，用了何种工具、可能的副作用。
+3. 使用analyze_prfl_frames.py得到的分析数据文件夹（来自safe脚本输出）
+4. 当前的代码新建到一个新的分支agent/case_1_fix_[日期+时间]
+5. 回到原来的分支，代码回到初始状态。
+
