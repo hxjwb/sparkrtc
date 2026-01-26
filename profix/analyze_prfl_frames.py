@@ -12,6 +12,7 @@ from statistics import mean, pstdev
 TIME_RE = re.compile(r"\[(\d+):(\d+)\]")
 SEND_RE = re.compile(r"Prfl_frame_send@(\d+)")
 RECV_RE = re.compile(r"Prfl_frame_recv@(\d+)")
+BITRATE_RE = re.compile(r"OnBitrateUpdated, bitrate (\d+)")
 
 
 def parse_time_ms(line: str):
@@ -50,6 +51,22 @@ def parse_send_recv(send_path: Path, recv_path: Path):
                 recv_times[ts] = t_ms
 
     return send_times, recv_times
+
+
+def parse_bitrate_kbps(send_path: Path):
+    samples = []
+    if not send_path.exists():
+        return samples
+    for line in send_path.read_text(errors="ignore").splitlines():
+        match = BITRATE_RE.search(line)
+        if not match:
+            continue
+        try:
+            bps = int(match.group(1))
+        except ValueError:
+            continue
+        samples.append(bps / 1000.0)
+    return samples
 
 
 def quantile(sorted_vals, q):
@@ -228,6 +245,12 @@ def main():
                 args.stall_threshold,
                 args.latency_offset,
             )
+            bitrate_samples = parse_bitrate_kbps(send_path)
+            bitrate_sorted = sorted(bitrate_samples)
+            metrics["bitrate_kbps_mean"] = safe_mean(bitrate_samples)
+            metrics["bitrate_kbps_p50"] = quantile(bitrate_sorted, 0.50)
+            metrics["bitrate_kbps_p95"] = quantile(bitrate_sorted, 0.95)
+            metrics["bitrate_samples"] = len(bitrate_samples)
             metrics["label"] = label
             metrics["run_id"] = run_dir.name
             per_run_rows.append(metrics)
@@ -258,6 +281,12 @@ def main():
             "stall_count_std": safe_pstdev([m["stall_count"] for m in run_metrics]),
             "stall_duration_ms_std": safe_pstdev([m["stall_duration_ms"] for m in run_metrics]),
             "stall_rate_std": safe_pstdev([m["stall_rate"] for m in run_metrics]),
+            "bitrate_kbps_mean_mean": safe_mean([m["bitrate_kbps_mean"] for m in run_metrics]),
+            "bitrate_kbps_p50_mean": safe_mean([m["bitrate_kbps_p50"] for m in run_metrics]),
+            "bitrate_kbps_p95_mean": safe_mean([m["bitrate_kbps_p95"] for m in run_metrics]),
+            "bitrate_kbps_mean_std": safe_pstdev([m["bitrate_kbps_mean"] for m in run_metrics]),
+            "bitrate_kbps_p50_std": safe_pstdev([m["bitrate_kbps_p50"] for m in run_metrics]),
+            "bitrate_kbps_p95_std": safe_pstdev([m["bitrate_kbps_p95"] for m in run_metrics]),
         }
 
     if per_run_rows:
