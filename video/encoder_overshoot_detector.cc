@@ -11,7 +11,9 @@
 #include "video/encoder_overshoot_detector.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
+#include <vector>
 
 #include "system_wrappers/include/metrics.h"
 
@@ -21,6 +23,27 @@ namespace {
 // down to
 // -(`kMaxMediaUnderrunFrames` / `target_framerate_fps_`) * `target_bitrate_`.
 static constexpr double kMaxMediaUnderrunFrames = 5.0;
+
+double Percentile(std::vector<double> values, double quantile) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  std::sort(values.begin(), values.end());
+  if (quantile <= 0.0) {
+    return values.front();
+  }
+  if (quantile >= 1.0) {
+    return values.back();
+  }
+  const double pos = quantile * (values.size() - 1);
+  const size_t lo = static_cast<size_t>(std::floor(pos));
+  const size_t hi = static_cast<size_t>(std::ceil(pos));
+  if (lo == hi) {
+    return values[lo];
+  }
+  const double frac = pos - lo;
+  return values[lo] + (values[hi] - values[lo]) * frac;
+}
 }  // namespace
 
 EncoderOvershootDetector::EncoderOvershootDetector(int64_t window_size_ms,
@@ -145,9 +168,12 @@ EncoderOvershootDetector::GetNetworkRateUtilizationFactor(int64_t time_ms) {
     return absl::nullopt;
   }
 
-  // TODO(sprang): Consider changing from arithmetic mean to some other
-  // function such as 90th percentile.
-  return sum_network_utilization_factors_ / utilization_factors_.size();
+  std::vector<double> factors;
+  factors.reserve(utilization_factors_.size());
+  for (const auto& update : utilization_factors_) {
+    factors.push_back(update.network_utilization_factor);
+  }
+  return Percentile(std::move(factors), 0.9);
 }
 
 absl::optional<double> EncoderOvershootDetector::GetMediaRateUtilizationFactor(

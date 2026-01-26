@@ -1876,10 +1876,9 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   frame_dropper_.Leak(framerate_fps);
   // Frame dropping is enabled iff frame dropping is not force-disabled, and
   // rate controller is not trusted.
-  // const bool frame_dropping_enabled = 
-  //     !force_disable_frame_dropper_ &&
-  //     !encoder_info_.has_trusted_rate_controller;
-  const bool frame_dropping_enabled = false;
+  const bool frame_dropping_enabled =
+      !force_disable_frame_dropper_ &&
+      !encoder_info_.has_trusted_rate_controller;
   frame_dropper_.Enable(frame_dropping_enabled);
   if (frame_dropping_enabled && frame_dropper_.DropFrame()) {
     RTC_LOG(LS_VERBOSE)
