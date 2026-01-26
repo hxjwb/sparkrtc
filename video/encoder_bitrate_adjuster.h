@@ -23,7 +23,7 @@ namespace webrtc {
 class EncoderBitrateAdjuster {
  public:
   // Size of sliding window used to track overshoot rate.
-  static constexpr int64_t kWindowSizeMs = 3000;
+  static constexpr int64_t kWindowSizeMs = 1500;
   // Minimum number of frames since last layout change required to trust the
   // overshoot statistics. Otherwise falls back to default utilization.
   // By layout change, we mean any simulcast/spatial/temporal layer being either
