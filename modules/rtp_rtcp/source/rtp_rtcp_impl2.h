@@ -239,7 +239,10 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
       const std::vector<uint16_t>& nack_sequence_numbers) override;
   void OnReceivedRtcpReportBlocks(
       rtc::ArrayView<const ReportBlockData> report_blocks) override;
-  void OnStallReport(const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays) override;
+  void OnStallReport(
+      const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays,
+      uint32_t stall_rtp_timestamp,
+      uint32_t stall_gap_ms) override;
   void OnRequestSendReport() override;
 
   void SetVideoBitrateAllocation(

@@ -565,16 +565,15 @@ void RtpTransportControllerSend::OnTransportFeedback(
       if (!packet_feedback.IsReceived()) {
         continue;
       }
-      if (!packet_feedback.rtp_timestamp.has_value()) {
-        continue;
-      }
       const uint16_t transport_seq =
           static_cast<uint16_t>(packet_feedback.sent_packet.sequence_number);
       twcc_time_correlator_.AddPacketInfo(
           transport_seq, packet_feedback.sent_packet.send_time.us(),
           packet_feedback.receive_time.us());
-      twcc_time_correlator_.AddRtpTimestampMapping(
-          transport_seq, *packet_feedback.rtp_timestamp);
+      if (packet_feedback.rtp_timestamp.has_value()) {
+        twcc_time_correlator_.AddRtpTimestampMapping(
+            transport_seq, *packet_feedback.rtp_timestamp);
+      }
     }
 
     if (controller_)

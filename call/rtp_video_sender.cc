@@ -455,6 +455,15 @@ RtpVideoSender::RtpVideoSender(
       fec_enabled = true;
     }
   }
+  const bool rtx_enabled = rtp_config_.rtx.payload_type != -1 ||
+                           !rtp_config_.rtx.ssrcs.empty();
+  const bool fec_configured =
+      rtp_config_.ulpfec.ulpfec_payload_type != -1 ||
+      rtp_config_.flexfec.payload_type != -1;
+  frame_time_window_.SetCodecName(
+      rtp_config_.payload_name.empty() ? "unknown" : rtp_config_.payload_name);
+  frame_time_window_.SetRtxFecEnabled(rtx_enabled,
+                                      fec_enabled && fec_configured);
   // Currently, both ULPFEC and FlexFEC use the same FEC rate calculation logic,
   // so enable that logic if either of those FEC schemes are enabled.
   fec_controller_->SetProtectionMethod(fec_enabled, NackEnabled());
@@ -624,8 +633,11 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   // Record frame timing information from encoded image
   int64_t encode_start_time_ms = encoded_image.timing_.encode_start_ms;
   int64_t encode_end_time_ms = encoded_image.timing_.encode_finish_ms;
+  const bool is_keyframe =
+      encoded_image._frameType == VideoFrameType::kVideoFrameKey;
   frame_time_window_.AddFrame(rtp_timestamp, encode_start_time_ms,
-                              encode_end_time_ms);
+                              encode_end_time_ms, encoded_image.size(),
+                              is_keyframe);
 
   bool send_result = rtp_streams_[simulcast_index].sender_video->SendEncodedImage(
       rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,
@@ -831,6 +843,7 @@ void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
                                       int framerate) {
   // Substract overhead from bitrate.
   MutexLock lock(&mutex_);
+  frame_time_window_.SetFpsNominal(framerate);
   size_t num_active_streams = 0;
   size_t overhead_bytes_per_packet = 0;
   for (const auto& stream : rtp_streams_) {
@@ -953,6 +966,13 @@ void RtpVideoSender::SetRetransmissionMode(int retransmission_mode) {
 void RtpVideoSender::SetFecAllowed(bool fec_allowed) {
   MutexLock lock(&mutex_);
   fec_allowed_ = fec_allowed;
+  const bool rtx_enabled = rtp_config_.rtx.payload_type != -1 ||
+                           !rtp_config_.rtx.ssrcs.empty();
+  const bool fec_configured =
+      rtp_config_.ulpfec.ulpfec_payload_type != -1 ||
+      rtp_config_.flexfec.payload_type != -1;
+  frame_time_window_.SetRtxFecEnabled(rtx_enabled,
+                                      fec_allowed_ && fec_configured);
 }
 
 void RtpVideoSender::OnPacketFeedbackVector(
@@ -1016,6 +1036,8 @@ void RtpVideoSender::OnPacketFeedbackVector(
 void RtpVideoSender::SetEncodingData(size_t width,
                                      size_t height,
                                      size_t num_temporal_layers) {
+  frame_time_window_.SetVideoDimensions(static_cast<int>(width),
+                                        static_cast<int>(height));
   fec_controller_->SetEncodingData(width, height, num_temporal_layers,
                                    rtp_config_.max_packet_size);
 }

@@ -51,6 +51,15 @@ std::vector<PacketTimeInfo> TwccTimeCorrelator::GetPacketTimesForFrame(uint32_t 
   return times;
 }
 
+absl::optional<PacketTimeInfo> TwccTimeCorrelator::GetPacketTime(
+    uint16_t sequence_number) const {
+  auto it = packet_times_.find(sequence_number);
+  if (it == packet_times_.end()) {
+    return absl::nullopt;
+  }
+  return it->second;
+}
+
 void TwccTimeCorrelator::MaintainHistorySize() {
   while (packet_times_.size() > max_packet_history_) {
     uint16_t oldest_seq = packet_times_.begin()->first;

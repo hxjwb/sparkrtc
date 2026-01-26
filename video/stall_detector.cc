@@ -53,6 +53,7 @@ void StallDetector::OnFrameDecoded(uint32_t rtp_timestamp,
       stall_pending_ = true;
       pending_frames_remaining_ = 10;
       last_stall_rtp_timestamp_ = info.rtp_timestamp;
+      last_stall_gap_us_ = delta_us;
     }
   }
   
@@ -79,7 +80,8 @@ std::vector<DecodeDelayInfo> StallDetector::GetRecentDecodeDelays(size_t count) 
 void StallDetector::CheckForStall() {
   if (observer_) {
     std::vector<DecodeDelayInfo> delays = GetRecentDecodeDelays(30);
-    observer_->OnStallDetected(delays, last_stall_rtp_timestamp_);
+    observer_->OnStallDetected(delays, last_stall_rtp_timestamp_,
+                               last_stall_gap_us_ / 1000);
   }
 }
 

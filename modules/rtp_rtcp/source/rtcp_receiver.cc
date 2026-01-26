@@ -143,6 +143,8 @@ struct RTCPReceiver::PacketInformation {
     uint64_t assemble_to_decode_us;
   };
   std::vector<DecodeDelayInfo> stall_report;
+  uint32_t stall_rtp_timestamp = 0;
+  uint32_t stall_gap_ms = 0;
 };
 
 RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
@@ -251,6 +253,11 @@ uint32_t RTCPReceiver::local_media_ssrc() const {
 uint32_t RTCPReceiver::RemoteSSRC() const {
   MutexLock lock(&rtcp_receiver_lock_);
   return remote_ssrc_;
+}
+
+RtcpPacketTypeCounter RTCPReceiver::GetPacketTypeCounter() const {
+  MutexLock lock(&rtcp_receiver_lock_);
+  return packet_type_counter_;
 }
 
 void RTCPReceiver::RttStats::AddRtt(TimeDelta rtt) {
@@ -802,13 +809,29 @@ bool RTCPReceiver::HandleApp(const rtcp::CommonHeader& rtcp_block,
     if (data_size < 4) {
       return true;
     }
-    uint32_t stall_rtp_timestamp =
-        (data[offset] << 24) | (data[offset + 1] << 16) |
-        (data[offset + 2] << 8) | data[offset + 3];
+    uint32_t header0 = (data[offset] << 24) | (data[offset + 1] << 16) |
+                       (data[offset + 2] << 8) | data[offset + 3];
+    uint32_t stall_rtp_timestamp = 0;
+    uint32_t stall_gap_ms = 0;
+    if (header0 == 2 && data_size >= 12) {
+      stall_rtp_timestamp =
+          (data[offset + 4] << 24) | (data[offset + 5] << 16) |
+          (data[offset + 6] << 8) | data[offset + 7];
+      stall_gap_ms =
+          (data[offset + 8] << 24) | (data[offset + 9] << 16) |
+          (data[offset + 10] << 8) | data[offset + 11];
+      offset += 12;
+    } else {
+      stall_rtp_timestamp = header0;
+      stall_gap_ms = 0;
+      offset += 4;
+    }
+    packet_information->stall_rtp_timestamp = stall_rtp_timestamp;
+    packet_information->stall_gap_ms = stall_gap_ms;
     RTC_LOG(LS_INFO) << "Stall report: stall rtp timestamp "
-                     << stall_rtp_timestamp;
-    RTC_LOG(LS_INFO) << "PRFL_STALL rtp_ts=" << stall_rtp_timestamp;
-    offset += 4;
+                     << stall_rtp_timestamp << ", gap " << stall_gap_ms << " ms";
+    RTC_LOG(LS_INFO) << "PRFL_STALL rtp_ts=" << stall_rtp_timestamp
+                     << " stall_gap_ms=" << stall_gap_ms;
 
     // Parse decode delay information
     while (offset + 20 <= data_size) {  // 4 bytes for timestamp + 8 bytes for delay + 8 bytes for assemble-to-decode
@@ -1255,7 +1278,9 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
         info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
         module_delays.push_back(info);
       }
-      rtp_rtcp_->OnStallReport(module_delays);
+      rtp_rtcp_->OnStallReport(module_delays,
+                               packet_information.stall_rtp_timestamp,
+                               packet_information.stall_gap_ms);
     }
   }
 

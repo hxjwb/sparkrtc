@@ -284,10 +284,12 @@ void VCMDecodedFrameCallback::ClearTimestampMap() {
 
 void VCMDecodedFrameCallback::OnStallDetected(
     const std::vector<DecodeDelayInfo>& decode_delays,
-    uint32_t stall_rtp_timestamp) {
+    uint32_t stall_rtp_timestamp,
+    int64_t stall_gap_ms) {
   RTC_LOG(LS_INFO) << "Stall detected, sending profiling data for "
                    << decode_delays.size() << " frames, stall rtp timestamp "
-                   << stall_rtp_timestamp;
+                   << stall_rtp_timestamp << ", stall gap " << stall_gap_ms
+                   << " ms";
   // TODO: Implement sending of custom RTCP APP packet with decode delays
 }
 

@@ -64,7 +64,9 @@ class RTCPReceiver final {
       uint64_t decode_delay_us;
       uint64_t assemble_to_decode_us;
     };
-    virtual void OnStallReport(const std::vector<DecodeDelayInfo>& decode_delays) = 0;
+    virtual void OnStallReport(const std::vector<DecodeDelayInfo>& decode_delays,
+                               uint32_t stall_rtp_timestamp,
+                               uint32_t stall_gap_ms) = 0;
 
    protected:
     virtual ~ModuleRtpRtcp() = default;
@@ -116,6 +118,8 @@ class RTCPReceiver final {
 
   void SetRemoteSSRC(uint32_t ssrc);
   uint32_t RemoteSSRC() const;
+
+  RtcpPacketTypeCounter GetPacketTypeCounter() const;
 
   bool receiver_only() const { return receiver_only_; }
 

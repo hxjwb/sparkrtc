@@ -23,7 +23,8 @@ class StallDetectorObserver {
  public:
   virtual ~StallDetectorObserver() = default;
   virtual void OnStallDetected(const std::vector<DecodeDelayInfo>& decode_delays,
-                               uint32_t stall_rtp_timestamp) = 0;
+                               uint32_t stall_rtp_timestamp,
+                               int64_t stall_gap_ms) = 0;
 };
 
 class StallDetector {
@@ -55,6 +56,7 @@ class StallDetector {
   bool stall_pending_ = false;
   int pending_frames_remaining_ = 0;
   uint32_t last_stall_rtp_timestamp_ = 0;
+  int64_t last_stall_gap_us_ = 0;
 
   void CheckForStall();
   void MaintainHistorySize();

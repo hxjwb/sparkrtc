@@ -202,7 +202,8 @@ class VideoReceiveStream2
 
   // Implements StallDetectorObserver.
   void OnStallDetected(const std::vector<DecodeDelayInfo>& decode_delays,
-                       uint32_t stall_rtp_timestamp) override;
+                       uint32_t stall_rtp_timestamp,
+                       int64_t stall_gap_ms) override;
 
  private:
   // FrameSchedulingReceiver implementation.

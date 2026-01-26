@@ -704,8 +704,12 @@ void ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks(
   }
 }
 
-void ModuleRtpRtcpImpl2::OnStallReport(const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays) {
-  RTC_LOG(LS_INFO) << "Processing stall report with " << decode_delays.size() << " frames";
+void ModuleRtpRtcpImpl2::OnStallReport(
+    const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays,
+    uint32_t stall_rtp_timestamp,
+    uint32_t stall_gap_ms) {
+  RTC_LOG(LS_INFO) << "Processing stall report with " << decode_delays.size()
+                   << " frames";
   
   // Call PrintProfilingInfo if FrameTimeWindow is available
   if (rtp_sender_) {
@@ -720,7 +724,11 @@ void ModuleRtpRtcpImpl2::OnStallReport(const std::vector<RTCPReceiver::ModuleRtp
         info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
         delays.push_back(info);
       }
-      frame_time_window->PrintProfilingInfo(delays, twcc_time_correlator_);
+      RtcpPacketTypeCounter counter = rtcp_receiver_.GetPacketTypeCounter();
+      uint32_t nack_sent = counter.nack_requests;
+      frame_time_window->PrintProfilingInfo(delays, stall_rtp_timestamp,
+                                            stall_gap_ms, nack_sent,
+                                            twcc_time_correlator_);
     }
   }
 }

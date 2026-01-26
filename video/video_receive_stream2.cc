@@ -1089,11 +1089,12 @@ void VideoReceiveStream2::UpdateRtxSsrc(uint32_t ssrc) {
 
 void VideoReceiveStream2::OnStallDetected(
     const std::vector<DecodeDelayInfo>& decode_delays,
-    uint32_t stall_rtp_timestamp) {
+    uint32_t stall_rtp_timestamp,
+    int64_t stall_gap_ms) {
   RTC_LOG(LS_INFO)
       << "Stall detected in VideoReceiveStream2, sending profiling data for "
       << decode_delays.size() << " frames, stall rtp timestamp "
-      << stall_rtp_timestamp;
+      << stall_rtp_timestamp << ", stall gap " << stall_gap_ms << " ms";
   
   // Log the decode delays
   for (const auto& delay_info : decode_delays) {
@@ -1114,11 +1115,18 @@ void VideoReceiveStream2::OnStallDetected(
   app_packet.SetSubType(1);  // Custom subtype for stall report
   app_packet.SetName(rtcp::App::NameToInt("STLL"));  // "STLL" for stall report
   
-  // Serialize stall timestamp + decode delay information
+  // Serialize version + stall timestamp + stall gap + decode delay information
   rtc::Buffer data_buffer;
+  uint32_t version_nbo = rtc::HostToNetwork32(2);
+  data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&version_nbo),
+                         sizeof(version_nbo));
   uint32_t stall_timestamp_nbo = rtc::HostToNetwork32(stall_rtp_timestamp);
   data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&stall_timestamp_nbo),
                          sizeof(stall_timestamp_nbo));
+  uint32_t stall_gap_nbo =
+      rtc::HostToNetwork32(static_cast<uint32_t>(stall_gap_ms));
+  data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&stall_gap_nbo),
+                         sizeof(stall_gap_nbo));
   for (const auto& delay_info : decode_delays) {
     // Write frame timestamp (4 bytes, network byte order)
     uint32_t frame_timestamp = delay_info.rtp_timestamp;

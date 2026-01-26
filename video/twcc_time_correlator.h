@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "api/units/timestamp.h"
 #include "modules/include/module_common_types_public.h"
 
@@ -33,6 +34,7 @@ class TwccTimeCorrelator {
   void AddPacketInfo(uint16_t sequence_number, int64_t send_time_us, int64_t receive_time_us);
   void AddRtpTimestampMapping(uint16_t sequence_number, uint32_t rtp_timestamp);
   std::vector<PacketTimeInfo> GetPacketTimesForFrame(uint32_t rtp_timestamp) const;
+  absl::optional<PacketTimeInfo> GetPacketTime(uint16_t sequence_number) const;
   
  private:
   struct SequenceNumberOlderThan {
