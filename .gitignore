@@ -83,3 +83,8 @@
 *.lib
 *.dll
 .aider*
+profix/logs/*
+profix/archive/*
+profix/recon/*
+profix/*.txt
+*.pdf
