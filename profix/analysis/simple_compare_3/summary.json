@@ -1,0 +1,36 @@
+{
+  "baseline": {
+    "runs": 3,
+    "frames_matched_mean": 352.3333333333333,
+    "latency_p50_ms_mean": 30.666666666666668,
+    "latency_p95_ms_mean": 350.9333333333333,
+    "latency_p99_ms_mean": 422.25000000000006,
+    "latency_mean_ms_mean": 118.47795679886686,
+    "stall_count_mean": 2,
+    "stall_duration_ms_mean": 241,
+    "stall_rate_mean": 0.01935088006400683,
+    "total_duration_ms_mean": 12453.666666666666,
+    "latency_p50_ms_std": 0.4714045207910317,
+    "latency_p95_ms_std": 13.881722595637122,
+    "stall_count_std": 0.0,
+    "stall_duration_ms_std": 8.640987597877148,
+    "stall_rate_std": 0.0006685951458555916
+  },
+  "current": {
+    "runs": 3,
+    "frames_matched_mean": 204.66666666666666,
+    "latency_p50_ms_mean": 24.333333333333332,
+    "latency_p95_ms_mean": 34.0,
+    "latency_p99_ms_mean": 35.333333333333336,
+    "latency_mean_ms_mean": 19.74883628248047,
+    "stall_count_mean": 0,
+    "stall_duration_ms_mean": 0,
+    "stall_rate_mean": 0.0,
+    "total_duration_ms_mean": 7151.666666666667,
+    "latency_p50_ms_std": 1.8856180831641267,
+    "latency_p95_ms_std": 1.4142135623730951,
+    "stall_count_std": 0.0,
+    "stall_duration_ms_std": 0.0,
+    "stall_rate_std": 0.0
+  }
+}

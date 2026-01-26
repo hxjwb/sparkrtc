@@ -87,4 +87,8 @@ profix/logs/*
 profix/archive/*
 profix/recon/*
 profix/*.txt
+profix/analysis/*
+!profix/analysis/
+!profix/analysis/simple_compare_3/
+!profix/analysis/simple_compare_3/**
 *.pdf
