@@ -23,16 +23,16 @@ namespace webrtc {
 class EncoderBitrateAdjuster {
  public:
   // Size of sliding window used to track overshoot rate.
-  static constexpr int64_t kWindowSizeMs = 3000;
+  // Smaller window reacts faster to bursty encoder overshoot.
+  static constexpr int64_t kWindowSizeMs = 1500;
   // Minimum number of frames since last layout change required to trust the
   // overshoot statistics. Otherwise falls back to default utilization.
   // By layout change, we mean any simulcast/spatial/temporal layer being either
   // enabled or disabled.
   static constexpr size_t kMinFramesSinceLayoutChange = 30;
-  // Default utilization, before reliable metrics are available, is set to 20%
-  // overshoot. This is conservative so that badly misbehaving encoders don't
-  // build too much queue at the very start.
-  static constexpr double kDefaultUtilizationFactor = 1.2;
+  // Default utilization, before reliable metrics are available, is set to 10%
+  // overshoot. This reduces queue build-up during bursty encoder output.
+  static constexpr double kDefaultUtilizationFactor = 1.1;
 
   explicit EncoderBitrateAdjuster(const VideoCodec& codec_settings);
   ~EncoderBitrateAdjuster();
