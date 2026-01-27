@@ -65,7 +65,7 @@ def main():
         run(["ninja", "-C", str(out_t)], check=False)
     run_series("current", repo_root, out_dir, args.runs, args.sleep)
 
-    baseline_dir = repo_root / "profix" / "cases" / "case_1" / "baseline_logs"
+    baseline_dir = repo_root / "profix" / "cases" / "case_2" / "baseline_logs"
     if not baseline_dir.exists():
         raise RuntimeError(f"Missing baseline logs at: {baseline_dir}")
 
