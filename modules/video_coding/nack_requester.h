@@ -146,6 +146,9 @@ class NackRequester final : public NackRequesterBase {
   // Adds a delay before send nack on packet received.
   const TimeDelta send_nack_delay_;
 
+  // Rate limit for keyframe requests triggered by NACK timeouts.
+  Timestamp last_keyframe_request_time_ RTC_GUARDED_BY(worker_thread_);
+
   ScopedNackPeriodicProcessorRegistration processor_registration_;
 
   // Used to signal destruction to potentially pending tasks.

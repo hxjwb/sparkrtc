@@ -26,9 +26,12 @@ constexpr int kMaxPacketAge = 10'000;
 constexpr int kMaxNackPackets = 1000;
 constexpr TimeDelta kDefaultRtt = TimeDelta::Millis(20);
 constexpr int kMaxNackRetries = 10;
+constexpr int kEarlyKeyframeNackRetries = 3;
 constexpr int kMaxReorderedPackets = 128;
 constexpr int kNumReorderingBuckets = 10;
 constexpr TimeDelta kDefaultSendNackDelay = TimeDelta::Zero();
+constexpr TimeDelta kMinKeyframeRequestInterval = TimeDelta::Millis(200);
+constexpr TimeDelta kMinKeyframeRequestDelay = TimeDelta::Millis(120);
 
 TimeDelta GetSendNackDelay(const FieldTrialsView& field_trials) {
   int64_t delay_ms = strtol(
@@ -119,6 +122,7 @@ NackRequester::NackRequester(TaskQueueBase* current_queue,
       rtt_(kDefaultRtt),
       newest_seq_num_(0),
       send_nack_delay_(GetSendNackDelay(field_trials)),
+      last_keyframe_request_time_(Timestamp::MinusInfinity()),
       processor_registration_(this, periodic_processor) {
   RTC_DCHECK(clock_);
   RTC_DCHECK(nack_sender_);
@@ -300,6 +304,18 @@ std::vector<uint16_t> NackRequester::GetNackBatch(NackFilterOptions options) {
   std::vector<uint16_t> nack_batch;
   auto it = nack_list_.begin();
   while (it != nack_list_.end()) {
+    const TimeDelta packet_age = now - it->second.created_at_time;
+    const TimeDelta keyframe_delay =
+        std::max(kMinKeyframeRequestDelay, rtt_ * 2);
+    if (it->second.retries >= kEarlyKeyframeNackRetries &&
+        packet_age >= keyframe_delay) {
+      if (now - last_keyframe_request_time_ >= kMinKeyframeRequestInterval) {
+        keyframe_request_sender_->RequestKeyFrame();
+        last_keyframe_request_time_ = now;
+      }
+      it = nack_list_.erase(it);
+      continue;
+    }
     bool delay_timed_out = now - it->second.created_at_time >= send_nack_delay_;
     bool nack_on_rtt_passed = now - it->second.sent_at_time >= rtt_;
     bool nack_on_seq_num_passed =
