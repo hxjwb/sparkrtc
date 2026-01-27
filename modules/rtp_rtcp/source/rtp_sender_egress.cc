@@ -23,6 +23,7 @@
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 #include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/time_utils.h"
 namespace webrtc {
 namespace {
@@ -357,6 +358,41 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
   }
   options.batchable = enable_send_packet_batching_ && !is_audio_;
   options.last_packet_in_batch = last_in_batch;
+  int prfl_packet_type = 5;
+  if (packet->packet_type().has_value()) {
+    switch (*packet->packet_type()) {
+      case RtpPacketMediaType::kAudio:
+      case RtpPacketMediaType::kVideo:
+        prfl_packet_type = 1;
+        break;
+      case RtpPacketMediaType::kRetransmission:
+        prfl_packet_type = 2;
+        break;
+      case RtpPacketMediaType::kForwardErrorCorrection:
+        prfl_packet_type = 3;
+        break;
+      case RtpPacketMediaType::kPadding:
+        prfl_packet_type = 4;
+        break;
+    }
+  }
+  uint16_t original_seq = packet->SequenceNumber();
+  if (packet->packet_type() == RtpPacketMediaType::kRetransmission &&
+      packet->retransmitted_sequence_number().has_value()) {
+    original_seq = *packet->retransmitted_sequence_number();
+  }
+  size_t payload_head_len = std::min<size_t>(10, packet->payload_size());
+  std::string payload_head = "0";
+  if (payload_head_len > 0) {
+    auto payload = packet->payload();
+    absl::string_view payload_view(
+        reinterpret_cast<const char*>(payload.data()), payload_head_len);
+    payload_head = rtc::hex_encode(payload_view);
+  }
+  RTC_LOG(LS_INFO) << "Prfl_pkt_send@" << packet->Timestamp() << " "
+                   << packet->SequenceNumber() << " " << prfl_packet_type
+                   << " " << payload_head << " " << packet->size() << " "
+                   << original_seq;
   const bool send_success = SendPacketToNetwork(*packet, options, pacing_info);
 
   // Put packet in retransmission history or update pending status even if

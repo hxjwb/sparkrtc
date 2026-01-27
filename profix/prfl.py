@@ -1,7 +1,7 @@
 # import imp
 import re
 import numpy as np
-time_sync = np.inf
+time_sync = None
 isLlama = False # False for webrtc, True for Llama
 
 def check_type(packet_type):
@@ -44,6 +44,7 @@ class Frame:
         # packet
         # self.packet_seqs = []
         self.media_packets = []
+        self.recv_packets = []
         
     
     def __repr__(self):
@@ -53,7 +54,7 @@ class Frame:
                 f"todecode_time={self.todecode_time}, decoded_time={self.decoded_time})")
 
     def net_delay(self):
-        if self.assembled_time is not None and self.encoded_time is not None:
+        if time_sync is not None and self.assembled_time is not None and self.encoded_time is not None:
             # times in receiver side should minus time sync
             return self.assembled_time - time_sync - self.encoded_time
         return None
@@ -81,7 +82,7 @@ class Frame:
         
         return (f"RTP TS: {self.rtp_ts}, Frame Size: {self.f_size}, Encode {encode_delay}, Net {net_delay}, Wait {todecode_queue_delay}, Decode {decode_delay} E2E {self.e2e_delay()} ")
     def e2e_delay(self):
-        if self.decoded_time is not None and self.captured_time is not None:
+        if time_sync is not None and self.decoded_time is not None and self.captured_time is not None:
             return self.decoded_time - time_sync - self.captured_time 
         return None
     
@@ -94,6 +95,7 @@ class Packet:
         
         self.type = None 
         self.size = None 
+        self.payload_head = None
         
         self.send_time = None 
         self.recv_time = None
@@ -105,7 +107,7 @@ class Packet:
         self.retran.append(uid)
 
     def get_recv_time(self):
-        if self.recv_time is not None:
+        if time_sync is not None and self.recv_time is not None:
             return self.recv_time - time_sync
         else:
             return None
@@ -148,6 +150,10 @@ if __name__ == "__main__":
     # seq2uid = {}
 
     uid2packets = {}
+    seq_payload_to_uid = {}
+    seq_to_uids = {}
+    send_packet_count = 0
+    missing_recv_rtp_ts = 0
     
     # Go through send log
     for line in lines_send:
@@ -188,23 +194,27 @@ if __name__ == "__main__":
             packet.rtp_ts = rtp_ts
             packet.type = packet_type
             packet.size = size
+            packet.payload_head = payload_head
             packet.send_time = time
             packet.original_seq = original_seq
             packet.seq_num = seq_num
 
             uid2packets[uid] = packet
+            send_packet_count += 1
+            seq_payload_to_uid[(seq_num, payload_head)] = uid
+            seq_to_uids.setdefault(seq_num, []).append(uid)
 
             if packet_type == 'media':
                 if rtp_ts not in rtp2frames:
                     print(f"Frame with RTP timestamp {rtp_ts} not found in send log.")
-                    exit(1)
+                    continue
                 frame = rtp2frames[rtp_ts]
                 frame.media_packets.append(uid)
                     
             if packet_type == 'rtx':
                 if rtp_ts not in rtp2frames:
                     print(f"Frame with RTP timestamp {rtp_ts} not found in send log.")
-                    exit(1)
+                    continue
                 # find the corresponding media packet
                 media_packet = None
                 for mp_uid in rtp2frames[rtp_ts].media_packets:
@@ -213,7 +223,7 @@ if __name__ == "__main__":
                         break
                 if media_packet is None:
                     print(f"Media packet with seq num {original_seq} not found in frame with RTP timestamp {rtp_ts}.")
-                    exit(1)
+                    continue
                 media_packet.add_retran(uid)
 
                 
@@ -246,6 +256,8 @@ if __name__ == "__main__":
             else:
                 print(f"Frame with RTP timestamp {rtp_ts} not found in send log.")
                 
+    seq_to_rtp_ts = {}
+    seq_to_size = {}
     for line in lines_recv:
         # Packet level
         if 'Prfl_pkt_re2v' in line:
@@ -268,15 +280,104 @@ if __name__ == "__main__":
             if uid in uid2packets:
                 packet = uid2packets[uid]
                 packet.recv_time = time
+        if 'Received RTP packet with SSRC' in line:
+            time = get_time(line)
+            match = re.search(
+                r'seq num:\s+(\d+),.*payload size:\s+(\d+), payload:\s*([0-9a-fA-F]*)',
+                line)
+            if match:
+                seq_num = int(match.group(1))
+                payload_size = int(match.group(2))
+                payload_hex = match.group(3).strip()
+                seq_to_size[seq_num] = payload_size
+                if payload_hex:
+                    payload_head = payload_hex[:20]
+                    match_uid = seq_payload_to_uid.get((seq_num, payload_head))
+                    if match_uid is None:
+                        candidates = seq_to_uids.get(seq_num, [])
+                        if len(candidates) == 1:
+                            match_uid = candidates[0]
+                    if match_uid is not None:
+                        packet = uid2packets[match_uid]
+                        packet.recv_time = time
+                        rtp_ts = packet.rtp_ts
+                        if rtp_ts in rtp2frames:
+                            frame = rtp2frames[rtp_ts]
+                            if match_uid not in frame.recv_packets:
+                                frame.recv_packets.append(match_uid)
+        if 'Packet received on SSRC' in line:
+            match = re.search(r'timestamp:\s+(\d+), sequence number:\s+(\d+)', line)
+            if match:
+                rtp_ts = int(match.group(1))
+                seq_num = int(match.group(2))
+                seq_to_rtp_ts[seq_num] = rtp_ts
+        if 'Prfl_pkt_recv' in line:
+            # Prfl_pkt_recv@78001867640028acb403 18484
+            time = get_time(line)
+            line_parts = line.split('@')[1].split(' ')
+            if len(line_parts) < 2:
+                print(f"Line format error: {line}")
+                continue
+            payload_head = line_parts[0].strip()
+            seq_num = int(line_parts[1])
+            rtp_ts = seq_to_rtp_ts.get(seq_num)
+            if rtp_ts is None:
+                match_uid = seq_payload_to_uid.get((seq_num, payload_head))
+                if match_uid is None:
+                    candidates = seq_to_uids.get(seq_num, [])
+                    if len(candidates) == 1:
+                        match_uid = candidates[0]
+                if match_uid is None:
+                    missing_recv_rtp_ts += 1
+                    continue
+                packet = uid2packets[match_uid]
+                rtp_ts = packet.rtp_ts
+                if rtp_ts in rtp2frames:
+                    frame = rtp2frames[rtp_ts]
+                    if match_uid not in frame.recv_packets:
+                        frame.recv_packets.append(match_uid)
+                continue
+            uid = f'{rtp_ts} {seq_num}'
+            if uid in uid2packets:
+                packet = uid2packets[uid]
+            else:
+                packet = Packet(uid)
+                packet.rtp_ts = rtp_ts
+                packet.type = 'unknown'
+                packet.size = None
+                packet.payload_head = payload_head
+                packet.seq_num = seq_num
+                uid2packets[uid] = packet
+            if packet.size is None and seq_num in seq_to_size:
+                packet.size = seq_to_size[seq_num]
+            if rtp_ts in rtp2frames:
+                frame = rtp2frames[rtp_ts]
+                if uid not in frame.recv_packets:
+                    frame.recv_packets.append(uid)
     
     # Get time sync by minimum delay of media packets
+    packet_delays = []
     for uid, packet in uid2packets.items():
         if packet.recv_time is not None and packet.send_time is not None:
             delay = packet.recv_time - packet.send_time
-            time_sync = min(time_sync, delay)
-    
-    # time_sync = 0
-    print(f"Time sync: {time_sync} ms")
+            packet_delays.append(delay)
+
+    if packet_delays:
+        time_sync = min(packet_delays)
+        print(f"Time sync: {time_sync} ms")
+    else:
+        frame_delays = []
+        for rtp_ts, frame in rtp2frames.items():
+            if frame.assembled_time is not None and frame.encoded_time is not None:
+                frame_delays.append(frame.assembled_time - frame.encoded_time)
+            elif frame.decoded_time is not None and frame.encoded_time is not None:
+                frame_delays.append(frame.decoded_time - frame.encoded_time)
+        if frame_delays:
+            time_sync = min(frame_delays)
+            print(f"Time sync (fallback from frames): {time_sync} ms")
+        else:
+            time_sync = 0
+            print("Time sync: 0 ms (fallback)")
     
                    
     print("-" * 50)
@@ -287,18 +388,34 @@ if __name__ == "__main__":
     # # Print all frames
     for rtp_ts, frame in rtp2frames.items():
         print(frame.timegap())
-        packets = frame.media_packets
+        packets = list(frame.media_packets)
+        if frame.recv_packets:
+            existing = set(packets)
+            for uid in frame.recv_packets:
+                if uid not in existing:
+                    packets.append(uid)
         # retran  = False
         lossed_packets = 0
         all_packets = len(packets)
         for uid in packets:
             # if there is retransmission
             packet = uid2packets[uid]
-            if packet.get_recv_time() is None:
-                trans_delta = '"lost"'
+            if packet.send_time is not None:
+                send_delta = packet.send_time - frame.encoded_time
             else:
-                trans_delta = packet.get_recv_time() - packet.send_time
-            print(f"P: seq {packet.seq_num}, size {packet.size}, send_delta {packet.send_time - frame.encoded_time}, trans_delta {trans_delta}")
+                send_delta = None
+            if packet.send_time is not None:
+                if packet.get_recv_time() is None:
+                    trans_delta = '"lost"'
+                else:
+                    trans_delta = packet.get_recv_time() - packet.send_time
+            else:
+                trans_delta = None
+            if packet.get_recv_time() is not None and frame.encoded_time is not None:
+                recv_delta = packet.get_recv_time() - frame.encoded_time
+            else:
+                recv_delta = None
+            print(f"P: seq {packet.seq_num}, size {packet.size}, send_delta {send_delta}, trans_delta {trans_delta}, recv_delta {recv_delta}")
             if packet.retran != []:
                 # print retransmission packet
                 for retran_uid in packet.retran:

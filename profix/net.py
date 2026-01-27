@@ -19,8 +19,8 @@ def change(symbol, value, file):
 
 delay = 5
 loss = 0.5
-loss_start = 30000
-loss_duration = 500
+loss_start = 2500
+loss_duration = 100
 
 
 

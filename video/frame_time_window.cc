@@ -15,6 +15,7 @@
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "rtc_base/logging.h"
@@ -63,12 +64,14 @@ void FrameTimeWindow::AddRetransPacket(uint32_t rtp_timestamp,
                                        int64_t send_time_ms,
                                        size_t size_bytes,
                                        absl::optional<uint16_t> rtx_target_seq) {
+  PacketTimingInfo packet{rtp_seq, transport_seq, send_time_ms, size_bytes,
+                          PacketKind::kRtx, rtx_target_seq, absl::nullopt};
   FrameTimingInfo* info = FindFrameByTimestamp(rtp_timestamp);
   if (info) {
-    info->retrans_packets.push_back(
-        PacketTimingInfo{rtp_seq, transport_seq, send_time_ms, size_bytes,
-                         PacketKind::kRtx, rtx_target_seq, absl::nullopt});
+    info->retrans_packets.push_back(packet);
   }
+  rtx_packet_window_.push_back(packet);
+  MaintainWindowSize();
 }
 
 void FrameTimeWindow::AddFecPacket(
@@ -150,14 +153,24 @@ struct PacketDigestEntry {
 struct RepairDigestEntry {
   uint32_t repair_id = 0;
   const char* type = "RTX";
-  absl::optional<uint16_t> target_seq;
   absl::optional<uint32_t> target_frame_ts;
+  std::vector<uint16_t> target_seqs;
   std::vector<uint16_t> repair_packet_seqs;
   int repair_packet_count = 0;
+  int target_seq_count = 0;
+  int64_t nack_request_ms = -1;
+  int64_t repair_first_send_ms = -1;
+  int64_t repair_last_send_ms = -1;
   int64_t repair_first_recv_ms = -1;
   int64_t repair_last_recv_ms = -1;
+  int64_t duration_ms = -1;
   const char* outcome = "FAILED";
-  std::vector<std::string> note_flags;
+  std::vector<uint16_t> recovered_seqs;
+  std::vector<uint16_t> too_late_seqs;
+  std::vector<uint16_t> failed_seqs;
+  int recovered_seq_count = 0;
+  int too_late_seq_count = 0;
+  int failed_seq_count = 0;
 };
 
 struct FrameDigestEntry {
@@ -210,6 +223,46 @@ void FrameTimeWindow::PrintProfilingInfo(
     }
   }
 
+  std::vector<PacketTimingInfo> rtx_packets_all;
+  std::unordered_map<uint32_t, std::vector<PacketTimingInfo>> rtx_by_frame;
+  std::unordered_map<uint16_t, std::vector<PacketTimingInfo>> rtx_by_target;
+  std::unordered_set<uint32_t> rtx_seen;
+  auto add_rtx_packet = [&](const PacketTimingInfo& packet) {
+    if (!packet.rtx_target_seq.has_value()) {
+      return;
+    }
+    const uint16_t target_seq = *packet.rtx_target_seq;
+    auto frame_it = seq_to_frame.find(target_seq);
+    if (frame_it == seq_to_frame.end()) {
+      return;
+    }
+    if (window_frames.count(frame_it->second) == 0) {
+      return;
+    }
+    const uint32_t key =
+        (static_cast<uint32_t>(packet.rtp_sequence_number) << 16) |
+        packet.transport_sequence_number;
+    if (!rtx_seen.insert(key).second) {
+      return;
+    }
+    rtx_packets_all.push_back(packet);
+    rtx_by_target[target_seq].push_back(packet);
+    rtx_by_frame[frame_it->second].push_back(packet);
+  };
+  for (const auto& decode_info : decode_delays) {
+    FrameTimingInfo* frame_info =
+        FindFrameByTimestamp(decode_info.rtp_timestamp);
+    if (!frame_info) {
+      continue;
+    }
+    for (const auto& packet_info : frame_info->retrans_packets) {
+      add_rtx_packet(packet_info);
+    }
+  }
+  for (const auto& packet_info : rtx_packet_window_) {
+    add_rtx_packet(packet_info);
+  }
+
   std::unordered_map<uint32_t, int64_t> deliver_to_decoder_ms;
   std::unordered_map<uint32_t, int64_t> decode_end_ms;
 
@@ -227,6 +280,7 @@ void FrameTimeWindow::PrintProfilingInfo(
   std::vector<PacketDigestEntry> packet_digests;
   std::vector<RepairDigestEntry> repair_digests;
 
+  const std::vector<PacketTimingInfo> empty_rtx_packets;
   for (const auto& decode_info : decode_delays) {
     FrameTimingInfo* frame_info = FindFrameByTimestamp(decode_info.rtp_timestamp);
     const int64_t decode_time_ms = decode_info.decode_delay_us / 1000;
@@ -237,15 +291,16 @@ void FrameTimeWindow::PrintProfilingInfo(
     size_t frame_size_bytes = 0;
     bool is_keyframe = false;
     std::vector<PacketTimingInfo> media_packets;
-    std::vector<PacketTimingInfo> retrans_packets;
     if (frame_info) {
       enc_start_ms = frame_info->encode_start_time_ms;
       enc_end_ms = frame_info->encode_end_time_ms;
       frame_size_bytes = frame_info->frame_size_bytes;
       is_keyframe = frame_info->is_keyframe;
       media_packets = frame_info->media_packets;
-      retrans_packets = frame_info->retrans_packets;
     }
+    const auto rtx_it = rtx_by_frame.find(decode_info.rtp_timestamp);
+    const std::vector<PacketTimingInfo>& frame_rtx_packets =
+        (rtx_it != rtx_by_frame.end()) ? rtx_it->second : empty_rtx_packets;
 
     int64_t first_send_ms = -1;
     int64_t last_send_ms = -1;
@@ -324,7 +379,7 @@ void FrameTimeWindow::PrintProfilingInfo(
 
     int packets_recovered_rtx = 0;
     std::set<uint16_t> recovered_rtx_seqs;
-    for (const auto& rtx_packet : retrans_packets) {
+    for (const auto& rtx_packet : frame_rtx_packets) {
       if (!rtx_packet.rtx_target_seq.has_value()) {
         continue;
       }
@@ -425,7 +480,7 @@ void FrameTimeWindow::PrintProfilingInfo(
       packet_digests.push_back(entry);
     }
 
-    for (const auto& packet_info : retrans_packets) {
+    for (const auto& packet_info : frame_rtx_packets) {
       PacketDigestEntry entry;
       entry.rtp_timestamp = decode_info.rtp_timestamp;
       entry.rtp_sequence_number = packet_info.rtp_sequence_number;
@@ -447,11 +502,9 @@ void FrameTimeWindow::PrintProfilingInfo(
 
   for (const auto& fec_info : fec_packet_window_) {
     std::set<uint32_t> target_frames;
-    bool missing_mapping = false;
     for (uint16_t seq : fec_info.protected_sequence_numbers) {
       auto it = seq_to_frame.find(seq);
       if (it == seq_to_frame.end()) {
-        missing_mapping = true;
         continue;
       }
       if (window_frames.count(it->second) > 0) {
@@ -487,19 +540,25 @@ void FrameTimeWindow::PrintProfilingInfo(
     RepairDigestEntry repair_entry;
     repair_entry.repair_id = fec_info.repair_id;
     repair_entry.type = "FEC";
+    constexpr size_t kMaxTargetSeqs = 10;
     if (target_frame_ts != 0) {
       repair_entry.target_frame_ts = target_frame_ts;
-    } else if (!fec_info.protected_sequence_numbers.empty()) {
-      repair_entry.target_seq = fec_info.protected_sequence_numbers.front();
+    }
+    if (!fec_info.protected_sequence_numbers.empty()) {
+      const size_t count = fec_info.protected_sequence_numbers.size();
+      repair_entry.target_seq_count = static_cast<int>(count);
+      const size_t limit = std::min(count, kMaxTargetSeqs);
+      repair_entry.target_seqs.assign(fec_info.protected_sequence_numbers.begin(),
+                                      fec_info.protected_sequence_numbers.begin() + limit);
     }
     repair_entry.repair_packet_count = 1;
+    repair_entry.nack_request_ms = entry.send_time_ms;
+    repair_entry.repair_first_send_ms = entry.send_time_ms;
+    repair_entry.repair_last_send_ms = entry.send_time_ms;
     repair_entry.repair_packet_seqs.push_back(
         fec_info.packet.rtp_sequence_number);
     repair_entry.repair_first_recv_ms = entry.recv_time_ms;
     repair_entry.repair_last_recv_ms = entry.recv_time_ms;
-    if (missing_mapping) {
-      repair_entry.note_flags.push_back("MISSING_MAPPING");
-    }
     int64_t deliver_ms = -1;
     if (target_frame_ts != 0) {
       auto it = deliver_to_decoder_ms.find(target_frame_ts);
@@ -507,87 +566,235 @@ void FrameTimeWindow::PrintProfilingInfo(
         deliver_ms = it->second;
       }
     }
-    if (entry.recv_time_ms < 0) {
-      repair_entry.outcome = "FAILED";
-    } else if (deliver_ms >= 0 && entry.recv_time_ms > deliver_ms) {
-      repair_entry.outcome = "TOO_LATE";
-    } else {
+    constexpr size_t kMaxSeqsPerOutcome = 10;
+    for (size_t i = 0; i < fec_info.protected_sequence_numbers.size(); ++i) {
+      uint16_t seq = fec_info.protected_sequence_numbers[i];
+      if (entry.recv_time_ms < 0) {
+        ++repair_entry.failed_seq_count;
+        if (repair_entry.failed_seqs.size() < kMaxSeqsPerOutcome) {
+          repair_entry.failed_seqs.push_back(seq);
+        }
+      } else if (deliver_ms >= 0 && entry.recv_time_ms > deliver_ms) {
+        ++repair_entry.too_late_seq_count;
+        if (repair_entry.too_late_seqs.size() < kMaxSeqsPerOutcome) {
+          repair_entry.too_late_seqs.push_back(seq);
+        }
+      } else {
+        ++repair_entry.recovered_seq_count;
+        if (repair_entry.recovered_seqs.size() < kMaxSeqsPerOutcome) {
+          repair_entry.recovered_seqs.push_back(seq);
+        }
+      }
+    }
+    if (repair_entry.recovered_seq_count > 0 &&
+        repair_entry.too_late_seq_count == 0 &&
+        repair_entry.failed_seq_count == 0) {
       repair_entry.outcome = "RECOVERED";
+    } else if (repair_entry.recovered_seq_count == 0 &&
+               repair_entry.too_late_seq_count > 0 &&
+               repair_entry.failed_seq_count == 0) {
+      repair_entry.outcome = "TOO_LATE";
+    } else if (repair_entry.recovered_seq_count == 0 &&
+               repair_entry.too_late_seq_count == 0 &&
+               repair_entry.failed_seq_count > 0) {
+      repair_entry.outcome = "FAILED";
+    } else {
+      repair_entry.outcome = "MIXED";
+    }
+    if (repair_entry.repair_last_recv_ms >= 0 &&
+        repair_entry.repair_first_send_ms >= 0) {
+      repair_entry.duration_ms =
+          repair_entry.repair_last_recv_ms - repair_entry.repair_first_send_ms;
     }
     repair_digests.push_back(std::move(repair_entry));
   }
 
-  std::unordered_map<uint16_t, std::vector<PacketTimingInfo>> rtx_by_target;
-  for (const auto& decode_info : decode_delays) {
-    FrameTimingInfo* frame_info = FindFrameByTimestamp(decode_info.rtp_timestamp);
-    if (!frame_info) {
-      continue;
-    }
-    for (const auto& packet_info : frame_info->retrans_packets) {
-      if (packet_info.rtx_target_seq.has_value()) {
-        rtx_by_target[*packet_info.rtx_target_seq].push_back(packet_info);
+  if (!rtx_packets_all.empty()) {
+    std::vector<PacketTimingInfo> rtx_sorted = rtx_packets_all;
+    std::sort(rtx_sorted.begin(), rtx_sorted.end(),
+              [](const PacketTimingInfo& a, const PacketTimingInfo& b) {
+                return a.send_time_ms < b.send_time_ms;
+              });
+    constexpr int64_t kNackBatchWindowMs = 5;
+    std::vector<PacketTimingInfo> batch;
+    int64_t batch_last_send_ms = -1;
+    auto flush_batch = [&]() {
+      if (batch.empty()) {
+        return;
       }
-    }
-  }
+      RepairDigestEntry repair_entry;
+      repair_entry.type = "RTX_BATCH";
+      repair_entry.repair_id = AllocateRepairId();
+      repair_entry.repair_packet_count = static_cast<int>(batch.size());
+      repair_entry.repair_first_send_ms = batch.front().send_time_ms;
+      repair_entry.repair_last_send_ms = batch.back().send_time_ms;
+      repair_entry.nack_request_ms = repair_entry.repair_first_send_ms;
 
-  for (const auto& [target_seq, packets] : rtx_by_target) {
-    RepairDigestEntry repair_entry;
-    repair_entry.type = "RTX";
-    repair_entry.repair_id = AllocateRepairId();
-    repair_entry.target_seq = target_seq;
-    auto frame_it = seq_to_frame.find(target_seq);
-    if (frame_it != seq_to_frame.end()) {
-      repair_entry.target_frame_ts = frame_it->second;
-    } else {
-      repair_entry.note_flags.push_back("MISSING_MAPPING");
-    }
-    repair_entry.repair_packet_count = static_cast<int>(packets.size());
-    for (size_t i = 0; i < packets.size() && i < 3; ++i) {
-      repair_entry.repair_packet_seqs.push_back(
-          packets[i].rtp_sequence_number);
-    }
-    if (packets.size() > 3) {
-      repair_entry.note_flags.push_back("PARTIAL");
-    }
+      std::set<uint16_t> target_seqs_set;
+      std::set<uint32_t> target_frames_set;
+      for (const auto& packet : batch) {
+        if (packet.rtx_target_seq.has_value()) {
+          target_seqs_set.insert(*packet.rtx_target_seq);
+          auto frame_it = seq_to_frame.find(*packet.rtx_target_seq);
+          if (frame_it != seq_to_frame.end()) {
+            target_frames_set.insert(frame_it->second);
+          }
+        }
+      }
+      constexpr size_t kMaxTargetSeqs = 10;
+      constexpr size_t kMaxSeqsPerOutcome = 10;
+      repair_entry.target_seq_count =
+          static_cast<int>(target_seqs_set.size());
+      if (!target_seqs_set.empty()) {
+        const size_t limit = std::min(target_seqs_set.size(), kMaxTargetSeqs);
+        auto it = target_seqs_set.begin();
+        for (size_t i = 0; i < limit; ++i, ++it) {
+          repair_entry.target_seqs.push_back(*it);
+        }
+      }
+      if (target_frames_set.size() == 1) {
+        repair_entry.target_frame_ts = *target_frames_set.begin();
+      }
 
-    int64_t first_recv_ms = -1;
-    int64_t last_recv_ms = -1;
-    for (const auto& packet : packets) {
-      if (!twcc_correlator) {
+      for (size_t i = 0; i < batch.size() && i < 3; ++i) {
+        repair_entry.repair_packet_seqs.push_back(
+            batch[i].rtp_sequence_number);
+      }
+
+      int64_t first_recv_ms = -1;
+      int64_t last_recv_ms = -1;
+      for (const auto& packet : batch) {
+        if (!twcc_correlator) {
+          continue;
+        }
+        auto packet_time =
+            twcc_correlator->GetPacketTime(packet.transport_sequence_number);
+        if (!packet_time.has_value()) {
+          continue;
+        }
+        const int64_t recv_ms = packet_time->receive_time_us / 1000;
+        if (first_recv_ms == -1 || recv_ms < first_recv_ms) {
+          first_recv_ms = recv_ms;
+        }
+        if (last_recv_ms == -1 || recv_ms > last_recv_ms) {
+          last_recv_ms = recv_ms;
+        }
+      }
+      repair_entry.repair_first_recv_ms = first_recv_ms;
+      repair_entry.repair_last_recv_ms = last_recv_ms;
+
+      int64_t deliver_ms = -1;
+      if (repair_entry.target_frame_ts.has_value()) {
+        auto it = deliver_to_decoder_ms.find(*repair_entry.target_frame_ts);
+        if (it != deliver_to_decoder_ms.end()) {
+          deliver_ms = it->second;
+        }
+      } else {
+        for (uint32_t frame_ts : target_frames_set) {
+          auto it = deliver_to_decoder_ms.find(frame_ts);
+          if (it == deliver_to_decoder_ms.end()) {
+            continue;
+          }
+          if (deliver_ms == -1 || it->second < deliver_ms) {
+            deliver_ms = it->second;
+          }
+        }
+      }
+
+      if (last_recv_ms < 0) {
+        repair_entry.outcome = "FAILED";
+      } else if (deliver_ms >= 0 && last_recv_ms > deliver_ms) {
+        repair_entry.outcome = "TOO_LATE";
+      } else {
+        repair_entry.outcome = "RECOVERED";
+      }
+      for (uint16_t target_seq : target_seqs_set) {
+        int64_t target_last_recv_ms = -1;
+        for (const auto& packet : batch) {
+          if (!packet.rtx_target_seq.has_value() ||
+              *packet.rtx_target_seq != target_seq) {
+            continue;
+          }
+          if (!twcc_correlator) {
+            continue;
+          }
+          auto packet_time =
+              twcc_correlator->GetPacketTime(packet.transport_sequence_number);
+          if (!packet_time.has_value()) {
+            continue;
+          }
+          const int64_t recv_ms = packet_time->receive_time_us / 1000;
+          if (target_last_recv_ms == -1 || recv_ms > target_last_recv_ms) {
+            target_last_recv_ms = recv_ms;
+          }
+        }
+        int64_t target_deliver_ms = -1;
+        auto frame_it = seq_to_frame.find(target_seq);
+        if (frame_it != seq_to_frame.end()) {
+          auto it = deliver_to_decoder_ms.find(frame_it->second);
+          if (it != deliver_to_decoder_ms.end()) {
+            target_deliver_ms = it->second;
+          }
+        }
+        if (target_last_recv_ms < 0) {
+          ++repair_entry.failed_seq_count;
+          if (repair_entry.failed_seqs.size() < kMaxSeqsPerOutcome) {
+            repair_entry.failed_seqs.push_back(target_seq);
+          }
+        } else if (target_deliver_ms >= 0 &&
+                   target_last_recv_ms > target_deliver_ms) {
+          ++repair_entry.too_late_seq_count;
+          if (repair_entry.too_late_seqs.size() < kMaxSeqsPerOutcome) {
+            repair_entry.too_late_seqs.push_back(target_seq);
+          }
+        } else {
+          ++repair_entry.recovered_seq_count;
+          if (repair_entry.recovered_seqs.size() < kMaxSeqsPerOutcome) {
+            repair_entry.recovered_seqs.push_back(target_seq);
+          }
+        }
+      }
+      if (repair_entry.recovered_seq_count > 0 &&
+          repair_entry.too_late_seq_count == 0 &&
+          repair_entry.failed_seq_count == 0) {
+        repair_entry.outcome = "RECOVERED";
+      } else if (repair_entry.recovered_seq_count == 0 &&
+                 repair_entry.too_late_seq_count > 0 &&
+                 repair_entry.failed_seq_count == 0) {
+        repair_entry.outcome = "TOO_LATE";
+      } else if (repair_entry.recovered_seq_count == 0 &&
+                 repair_entry.too_late_seq_count == 0 &&
+                 repair_entry.failed_seq_count > 0) {
+        repair_entry.outcome = "FAILED";
+      } else {
+        repair_entry.outcome = "MIXED";
+      }
+      if (repair_entry.repair_last_recv_ms >= 0 &&
+          repair_entry.repair_first_send_ms >= 0) {
+        repair_entry.duration_ms =
+            repair_entry.repair_last_recv_ms - repair_entry.repair_first_send_ms;
+      }
+      repair_digests.push_back(std::move(repair_entry));
+      batch.clear();
+      batch_last_send_ms = -1;
+    };
+
+    for (const auto& packet : rtx_sorted) {
+      if (batch.empty()) {
+        batch.push_back(packet);
+        batch_last_send_ms = packet.send_time_ms;
         continue;
       }
-      auto packet_time =
-          twcc_correlator->GetPacketTime(packet.transport_sequence_number);
-      if (!packet_time.has_value()) {
+      if (packet.send_time_ms - batch_last_send_ms <= kNackBatchWindowMs) {
+        batch.push_back(packet);
+        batch_last_send_ms = packet.send_time_ms;
         continue;
       }
-      const int64_t recv_ms = packet_time->receive_time_us / 1000;
-      if (first_recv_ms == -1 || recv_ms < first_recv_ms) {
-        first_recv_ms = recv_ms;
-      }
-      if (last_recv_ms == -1 || recv_ms > last_recv_ms) {
-        last_recv_ms = recv_ms;
-      }
+      flush_batch();
+      batch.push_back(packet);
+      batch_last_send_ms = packet.send_time_ms;
     }
-    repair_entry.repair_first_recv_ms = first_recv_ms;
-    repair_entry.repair_last_recv_ms = last_recv_ms;
-
-    int64_t deliver_ms = -1;
-    if (repair_entry.target_frame_ts.has_value()) {
-      auto it = deliver_to_decoder_ms.find(*repair_entry.target_frame_ts);
-      if (it != deliver_to_decoder_ms.end()) {
-        deliver_ms = it->second;
-      }
-    }
-
-    if (last_recv_ms < 0) {
-      repair_entry.outcome = "FAILED";
-    } else if (deliver_ms >= 0 && last_recv_ms > deliver_ms) {
-      repair_entry.outcome = "TOO_LATE";
-    } else {
-      repair_entry.outcome = "RECOVERED";
-    }
-    repair_digests.push_back(std::move(repair_entry));
+    flush_batch();
   }
 
   for (const auto& digest : packet_digests) {
@@ -680,29 +887,62 @@ void FrameTimeWindow::PrintProfilingInfo(
       }
       repair_seqs.append(std::to_string(repair.repair_packet_seqs[i]));
     }
-    std::string note_flags;
-    for (size_t i = 0; i < repair.note_flags.size(); ++i) {
+    std::string target_seqs;
+    for (size_t i = 0; i < repair.target_seqs.size(); ++i) {
       if (i > 0) {
-        note_flags.append("|");
+        target_seqs.append(",");
       }
-      note_flags.append(repair.note_flags[i]);
+      target_seqs.append(std::to_string(repair.target_seqs[i]));
+    }
+    std::string recovered_seqs;
+    for (size_t i = 0; i < repair.recovered_seqs.size(); ++i) {
+      if (i > 0) {
+        recovered_seqs.append(",");
+      }
+      recovered_seqs.append(std::to_string(repair.recovered_seqs[i]));
+    }
+    std::string too_late_seqs;
+    for (size_t i = 0; i < repair.too_late_seqs.size(); ++i) {
+      if (i > 0) {
+        too_late_seqs.append(",");
+      }
+      too_late_seqs.append(std::to_string(repair.too_late_seqs[i]));
+    }
+    std::string failed_seqs;
+    for (size_t i = 0; i < repair.failed_seqs.size(); ++i) {
+      if (i > 0) {
+        failed_seqs.append(",");
+      }
+      failed_seqs.append(std::to_string(repair.failed_seqs[i]));
     }
     RTC_LOG(LS_INFO) << "PRFL_REPAIR repair_id=" << repair.repair_id
                      << " type=" << repair.type
-                     << " target_seq="
-                     << (repair.target_seq.has_value()
-                             ? std::to_string(*repair.target_seq)
-                             : "-1")
                      << " target_frame_ts="
                      << (repair.target_frame_ts.has_value()
                              ? std::to_string(*repair.target_frame_ts)
                              : "0")
+                     << " target_seqs="
+                     << (!target_seqs.empty() ? target_seqs : "-")
+                     << " target_seq_count=" << repair.target_seq_count
                      << " repair_packet_seqs=" << repair_seqs
                      << " repair_packet_count=" << repair.repair_packet_count
+                     << " nack_request_ms=" << repair.nack_request_ms
+                     << " repair_first_send_ms=" << repair.repair_first_send_ms
+                     << " repair_last_send_ms=" << repair.repair_last_send_ms
                      << " repair_first_recv_ms=" << repair.repair_first_recv_ms
                      << " repair_last_recv_ms=" << repair.repair_last_recv_ms
+                     << " duration_ms=" << repair.duration_ms
+                     << " recovered_seqs="
+                     << (!recovered_seqs.empty() ? recovered_seqs : "-")
+                     << " recovered_seq_count=" << repair.recovered_seq_count
+                     << " too_late_seqs="
+                     << (!too_late_seqs.empty() ? too_late_seqs : "-")
+                     << " too_late_seq_count=" << repair.too_late_seq_count
+                     << " failed_seqs="
+                     << (!failed_seqs.empty() ? failed_seqs : "-")
+                     << " failed_seq_count=" << repair.failed_seq_count
                      << " outcome=" << repair.outcome
-                     << " note_flags=" << note_flags;
+                     ;
   }
 
   RTC_LOG(LS_INFO) << "[STALL_HEADER]";
@@ -772,21 +1012,62 @@ void FrameTimeWindow::PrintProfilingInfo(
       }
       repair_seqs.append(std::to_string(r.repair_packet_seqs[j]));
     }
+    std::string target_seqs;
+    for (size_t j = 0; j < r.target_seqs.size(); ++j) {
+      if (j > 0) {
+        target_seqs.append(",");
+      }
+      target_seqs.append(std::to_string(r.target_seqs[j]));
+    }
+    std::string recovered_seqs;
+    for (size_t j = 0; j < r.recovered_seqs.size(); ++j) {
+      if (j > 0) {
+        recovered_seqs.append(",");
+      }
+      recovered_seqs.append(std::to_string(r.recovered_seqs[j]));
+    }
+    std::string too_late_seqs;
+    for (size_t j = 0; j < r.too_late_seqs.size(); ++j) {
+      if (j > 0) {
+        too_late_seqs.append(",");
+      }
+      too_late_seqs.append(std::to_string(r.too_late_seqs[j]));
+    }
+    std::string failed_seqs;
+    for (size_t j = 0; j < r.failed_seqs.size(); ++j) {
+      if (j > 0) {
+        failed_seqs.append(",");
+      }
+      failed_seqs.append(std::to_string(r.failed_seqs[j]));
+    }
     RTC_LOG(LS_INFO) << (i + 1) << ") repair_id=" << r.repair_id
                      << " type=" << r.type
-                     << " target_seq="
-                     << (r.target_seq.has_value()
-                             ? std::to_string(*r.target_seq)
-                             : "-1")
                      << " target_frame_ts="
                      << (r.target_frame_ts.has_value()
                              ? std::to_string(*r.target_frame_ts)
                              : "0")
+                     << " target_seqs="
+                     << (!target_seqs.empty() ? target_seqs : "-")
+                     << " target_seq_count=" << r.target_seq_count
                      << " repair_packet_seqs=" << repair_seqs
                      << " repair_packet_count=" << r.repair_packet_count
+                     << " nack_request_ms=" << r.nack_request_ms
+                     << " repair_first_send_ms=" << r.repair_first_send_ms
+                     << " repair_last_send_ms=" << r.repair_last_send_ms
                      << " repair_first_recv_ms=" << r.repair_first_recv_ms
                      << " repair_last_recv_ms=" << r.repair_last_recv_ms
-                     << " outcome=" << r.outcome;
+                     << " duration_ms=" << r.duration_ms
+                     << " recovered_seqs="
+                     << (!recovered_seqs.empty() ? recovered_seqs : "-")
+                     << " recovered_seq_count=" << r.recovered_seq_count
+                     << " too_late_seqs="
+                     << (!too_late_seqs.empty() ? too_late_seqs : "-")
+                     << " too_late_seq_count=" << r.too_late_seq_count
+                     << " failed_seqs="
+                     << (!failed_seqs.empty() ? failed_seqs : "-")
+                     << " failed_seq_count=" << r.failed_seq_count
+                     << " outcome=" << r.outcome
+                     ;
   }
 }
 
@@ -806,6 +1087,10 @@ void FrameTimeWindow::MaintainWindowSize() {
   const size_t max_fec_packets = window_size_ * 4;
   while (fec_packet_window_.size() > max_fec_packets) {
     fec_packet_window_.pop_front();
+  }
+  const size_t max_rtx_packets = window_size_ * 4;
+  while (rtx_packet_window_.size() > max_rtx_packets) {
+    rtx_packet_window_.pop_front();
   }
 }
 

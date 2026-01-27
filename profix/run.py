@@ -4,7 +4,7 @@ bin_path = "/home/xiangjie/sparkrtc/out/t"
 w,h = 1920, 1080
 fps = 30
 # recon_file = "res/recon.yuv"
-duration =  10 # seconds
+duration =  5 # seconds
 
 
 import subprocess

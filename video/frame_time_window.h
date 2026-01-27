@@ -111,6 +111,7 @@ class FrameTimeWindow {
   const size_t window_size_;
   std::deque<FrameTimingInfo> frame_window_;
   std::deque<FecPacketInfo> fec_packet_window_;
+  std::deque<PacketTimingInfo> rtx_packet_window_;
   StallReportHeader report_header_;
   uint32_t next_repair_id_ = 1;
 
