@@ -33,6 +33,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 
@@ -384,6 +385,7 @@ RtpVideoSender::RtpVideoSender(
           field_trials_.Lookup("WebRTC-Video-UseFrameRateForOverhead"),
           "Enabled")),
       has_packet_feedback_(TransportSeqNumExtensionConfigured(rtp_config)),
+      clock_(clock),
       active_(false),
       fec_controller_(std::move(fec_controller)),
       fec_allowed_(true),
@@ -843,7 +845,9 @@ void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
                                       int framerate) {
   // Substract overhead from bitrate.
   MutexLock lock(&mutex_);
+  const int64_t now_ms = clock_->TimeInMilliseconds();
   frame_time_window_.SetFpsNominal(framerate);
+  frame_time_window_.AddBweTargetRate(now_ms, update.target_bitrate.bps());
   size_t num_active_streams = 0;
   size_t overhead_bytes_per_packet = 0;
   for (const auto& stream : rtp_streams_) {
@@ -914,6 +918,7 @@ void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
   RTC_DCHECK_GE(update.target_bitrate, DataRate::BitsPerSec(media_rate));
   // `protection_bitrate_bps_` includes overhead.
   protection_bitrate_bps_ = update.target_bitrate.bps() - media_rate;
+  frame_time_window_.AddEncoderTargetRate(now_ms, encoder_target_rate_bps_);
 }
 
 uint32_t RtpVideoSender::GetPayloadBitrateBps() const {

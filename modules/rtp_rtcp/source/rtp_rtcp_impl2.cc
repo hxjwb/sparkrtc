@@ -159,7 +159,18 @@ absl::optional<uint32_t> ModuleRtpRtcpImpl2::FlexfecSsrc() const {
 void ModuleRtpRtcpImpl2::IncomingRtcpPacket(
     rtc::ArrayView<const uint8_t> rtcp_packet) {
   RTC_DCHECK_RUN_ON(&rtcp_thread_checker_);
+  RtcpPacketTypeCounter before = rtcp_receiver_.GetPacketTypeCounter();
   rtcp_receiver_.IncomingPacket(rtcp_packet);
+  RtcpPacketTypeCounter delta = rtcp_receiver_.GetPacketTypeCounter();
+  delta.Subtract(before);
+  if (rtp_sender_) {
+    FrameTimeWindow* frame_time_window =
+        rtp_sender_->packet_sender.GetFrameTimeWindow();
+    if (frame_time_window) {
+      const int64_t now_ms = clock_->CurrentTime().ms();
+      frame_time_window->AddRtcpPacketTypeCounter(now_ms, delta);
+    }
+  }
 }
 
 void ModuleRtpRtcpImpl2::RegisterSendPayloadFrequency(int payload_type,

@@ -44,6 +44,7 @@
 
 namespace webrtc {
 
+class Clock;
 class FrameEncryptorInterface;
 class RtpTransportControllerSendInterface;
 
@@ -176,6 +177,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   const FieldTrialsView& field_trials_;
   const bool use_frame_rate_for_overhead_;
   const bool has_packet_feedback_;
+  Clock* const clock_;
 
   // Semantically equivalent to checking for `transport_->GetWorkerQueue()`
   // but some tests need to be updated to call from the correct context.
