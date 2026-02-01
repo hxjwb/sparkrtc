@@ -39,6 +39,7 @@
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp8_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp9_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_open_h264_adapter.h"
+#include "api/video_track_source_constraints.h"
 #include "examples/peerconnection/localvideo/defaults.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_processing/include/audio_processing.h"
@@ -95,6 +96,12 @@ class CapturerTrackSource : public webrtc::VideoTrackSource {
 
   bool is_screencast() const override { return m_screencast; }
   absl::optional<bool> needs_denoising() const override { return m_screencast; }
+  void ProcessConstraints(
+      const webrtc::VideoTrackSourceConstraints& constraints) override {
+    if (capturer_) {
+      capturer_->ProcessConstraints(constraints);
+    }
+  }
 
  protected:
   explicit CapturerTrackSource(
@@ -508,6 +515,10 @@ void Conductor::AddTracks() {
   rtc::scoped_refptr<CapturerTrackSource> video_device =
       CapturerTrackSource::Create();
   if (video_device) {
+    webrtc::VideoTrackSourceConstraints constraints;
+    constraints.min_fps = 0.0;
+    constraints.max_fps = 20.0;
+    video_device->ProcessConstraints(constraints);
     rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track_(
         peer_connection_factory_->CreateVideoTrack(video_device, kVideoLabel));
     main_wnd_->StartLocalRenderer(video_track_.get());

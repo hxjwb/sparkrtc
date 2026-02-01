@@ -29,6 +29,7 @@ constexpr int kMaxNackRetries = 10;
 constexpr int kMaxReorderedPackets = 128;
 constexpr int kNumReorderingBuckets = 10;
 constexpr TimeDelta kDefaultSendNackDelay = TimeDelta::Zero();
+constexpr TimeDelta kKeyframeRequestMinInterval = TimeDelta::Millis(500);
 
 TimeDelta GetSendNackDelay(const FieldTrialsView& field_trials) {
   int64_t delay_ms = strtol(
@@ -119,6 +120,7 @@ NackRequester::NackRequester(TaskQueueBase* current_queue,
       rtt_(kDefaultRtt),
       newest_seq_num_(0),
       send_nack_delay_(GetSendNackDelay(field_trials)),
+      last_keyframe_request_time_(Timestamp::MinusInfinity()),
       processor_registration_(this, periodic_processor) {
   RTC_DCHECK(clock_);
   RTC_DCHECK(nack_sender_);
@@ -313,6 +315,11 @@ std::vector<uint16_t> NackRequester::GetNackBatch(NackFilterOptions options) {
       if (it->second.retries >= kMaxNackRetries) {
         RTC_LOG(LS_WARNING) << "Sequence number " << it->second.seq_num
                             << " removed from NACK list due to max retries.";
+        if (now - last_keyframe_request_time_ >=
+            kKeyframeRequestMinInterval) {
+          keyframe_request_sender_->RequestKeyFrame();
+          last_keyframe_request_time_ = now;
+        }
         it = nack_list_.erase(it);
       } else {
         ++it;

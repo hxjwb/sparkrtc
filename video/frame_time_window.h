@@ -40,6 +40,7 @@ struct PacketTimingInfo {
 
 struct FrameTimingInfo {
   uint32_t rtp_timestamp;
+  int64_t capture_time_ms;
   int64_t encode_start_time_ms;
   int64_t encode_end_time_ms;
   size_t frame_size_bytes = 0;
@@ -75,6 +76,7 @@ class FrameTimeWindow {
   ~FrameTimeWindow();
 
   void AddFrame(uint32_t rtp_timestamp,
+                int64_t capture_time_ms,
                 int64_t encode_start_time_ms,
                 int64_t encode_end_time_ms,
                 size_t frame_size_bytes,

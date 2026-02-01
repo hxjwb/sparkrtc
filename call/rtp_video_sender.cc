@@ -635,9 +635,9 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   int64_t encode_end_time_ms = encoded_image.timing_.encode_finish_ms;
   const bool is_keyframe =
       encoded_image._frameType == VideoFrameType::kVideoFrameKey;
-  frame_time_window_.AddFrame(rtp_timestamp, encode_start_time_ms,
-                              encode_end_time_ms, encoded_image.size(),
-                              is_keyframe);
+  frame_time_window_.AddFrame(rtp_timestamp, encoded_image.capture_time_ms_,
+                              encode_start_time_ms, encode_end_time_ms,
+                              encoded_image.size(), is_keyframe);
 
   bool send_result = rtp_streams_[simulcast_index].sender_video->SendEncodedImage(
       rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,

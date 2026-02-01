@@ -51,7 +51,7 @@ void StallDetector::OnFrameDecoded(uint32_t rtp_timestamp,
     if (delta_us > stall_threshold_us_) {
       RTC_LOG(LS_INFO) << "Stall detected: delta_us = " << delta_us;
       stall_pending_ = true;
-      pending_frames_remaining_ = 10;
+      pending_frames_remaining_ = 1;
       last_stall_rtp_timestamp_ = info.rtp_timestamp;
       last_stall_gap_us_ = delta_us;
     }

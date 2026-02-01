@@ -6,6 +6,11 @@
 
 namespace webrtc {
 
+void TestDesktopCapturer::ProcessConstraints(
+    const webrtc::VideoTrackSourceConstraints& constraints) {
+  broadcaster_.ProcessConstraints(constraints);
+}
+
 void TestDesktopCapturer::AddOrUpdateSink(
     rtc::VideoSinkInterface<VideoFrame>* sink,
     const rtc::VideoSinkWants& wants) {

@@ -290,7 +290,10 @@ void VCMDecodedFrameCallback::OnStallDetected(
                    << decode_delays.size() << " frames, stall rtp timestamp "
                    << stall_rtp_timestamp << ", stall gap " << stall_gap_ms
                    << " ms";
-  // TODO: Implement sending of custom RTCP APP packet with decode delays
+  if (stall_observer_ && stall_observer_ != this) {
+    stall_observer_->OnStallDetected(decode_delays, stall_rtp_timestamp,
+                                     stall_gap_ms);
+  }
 }
 
 VCMGenericDecoder::VCMGenericDecoder(VideoDecoder* decoder)

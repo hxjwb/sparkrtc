@@ -31,12 +31,14 @@ FrameTimeWindow::~FrameTimeWindow() {
 }
 
 void FrameTimeWindow::AddFrame(uint32_t rtp_timestamp,
+                               int64_t capture_time_ms,
                                int64_t encode_start_time_ms,
                                int64_t encode_end_time_ms,
                                size_t frame_size_bytes,
                                bool is_keyframe) {
   FrameTimingInfo info;
   info.rtp_timestamp = rtp_timestamp;
+  info.capture_time_ms = capture_time_ms;
   info.encode_start_time_ms = encode_start_time_ms;
   info.encode_end_time_ms = encode_end_time_ms;
   info.frame_size_bytes = frame_size_bytes;
@@ -178,6 +180,8 @@ struct FrameDigestEntry {
   bool is_keyframe = false;
   size_t frame_size_bytes = 0;
   int packets_expected = -1;
+  int64_t capture_time_ms = -1;
+  int64_t enc_start_ms = -1;
   int64_t enc_end_ms = -1;
   int64_t first_send_ms = -1;
   int64_t last_send_ms = -1;
@@ -286,12 +290,14 @@ void FrameTimeWindow::PrintProfilingInfo(
     const int64_t decode_time_ms = decode_info.decode_delay_us / 1000;
     const int64_t last_recv_to_decode_ms = decode_info.assemble_to_decode_us / 1000;
 
+    int64_t capture_time_ms = -1;
     int64_t enc_start_ms = -1;
     int64_t enc_end_ms = -1;
     size_t frame_size_bytes = 0;
     bool is_keyframe = false;
     std::vector<PacketTimingInfo> media_packets;
     if (frame_info) {
+      capture_time_ms = frame_info->capture_time_ms;
       enc_start_ms = frame_info->encode_start_time_ms;
       enc_end_ms = frame_info->encode_end_time_ms;
       frame_size_bytes = frame_info->frame_size_bytes;
@@ -428,6 +434,8 @@ void FrameTimeWindow::PrintProfilingInfo(
     frame_entry.is_keyframe = is_keyframe;
     frame_entry.frame_size_bytes = frame_size_bytes;
     frame_entry.packets_expected = packets_expected;
+    frame_entry.capture_time_ms = capture_time_ms;
+    frame_entry.enc_start_ms = enc_start_ms;
     frame_entry.enc_end_ms = enc_end_ms;
     frame_entry.first_send_ms = first_send_ms;
     frame_entry.last_send_ms = last_send_ms;
@@ -446,6 +454,7 @@ void FrameTimeWindow::PrintProfilingInfo(
                      << " frame_type=" << (is_keyframe ? "key" : "delta")
                      << " frame_size_bytes=" << frame_size_bytes
                      << " packets_expected=" << packets_expected
+                     << " capture_ms=" << capture_time_ms
                      << " enc_start_ms=" << enc_start_ms
                      << " enc_end_ms=" << enc_end_ms
                      << " first_send_ms=" << first_send_ms
@@ -977,6 +986,8 @@ void FrameTimeWindow::PrintProfilingInfo(
                      << " frame_type=" << (f.is_keyframe ? "key" : "delta")
                      << " frame_size_bytes=" << f.frame_size_bytes
                      << " packets_expected=" << f.packets_expected
+                     << " capture_ms=" << f.capture_time_ms
+                     << " enc_start_ms=" << f.enc_start_ms
                      << " enc_end_ms=" << f.enc_end_ms
                      << " first_send_ms=" << f.first_send_ms
                      << " last_send_ms=" << f.last_send_ms

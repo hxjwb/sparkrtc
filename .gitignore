@@ -84,4 +84,4 @@
 *.dll
 .aider*
 /profix
-/profix/*
+profix/*
