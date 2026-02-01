@@ -12,7 +12,6 @@
 
 #include <string.h>  // memcpy
 
-#include <cstdlib>
 
 #include <algorithm>  // std::min
 #include <memory>
@@ -59,10 +58,6 @@ const uint32_t kRtcpAnyExtendedReports = kRtcpXrReceiverReferenceTime |
 constexpr int32_t kDefaultVideoReportInterval = 10;
 constexpr int32_t kDefaultAudioReportInterval = 5000;
 
-bool DropNonSenderRtcpAfterFirst() {
-  const char* env = std::getenv("SPARKRTC_REPRO_BWE_NO_FEEDBACK");
-  return env != nullptr && env[0] != '\0' && env[0] != '0';
-}
 }  // namespace
 
 // Helper to put several RTCP packets into lower layer datagram RTCP packet.
@@ -605,10 +600,8 @@ int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
   absl::optional<PacketSender> sender;
   {
     MutexLock lock(&mutex_rtcp_sender_);
-    if (!sending_ && DropNonSenderRtcpAfterFirst()) {
+    if (!sending_) {
       if (non_sender_rtcp_sent_ > 0) {
-        RTC_LOG(LS_WARNING)
-            << "Dropping RTCP after first non-sender packet (repro).";
         return 0;
       }
       ++non_sender_rtcp_sent_;

@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <string>
@@ -47,8 +46,6 @@ constexpr int kLimitNumPackets = 20;
 constexpr DataRate kDefaultMaxBitrate = DataRate::BitsPerSec(1000000000);
 constexpr TimeDelta kLowBitrateLogPeriod = TimeDelta::Millis(10000);
 constexpr TimeDelta kRtcEventLogPeriod = TimeDelta::Millis(5000);
-// Expecting that RTCP feedback is sent uniformly within [0.5, 1.5]s intervals.
-constexpr TimeDelta kMaxRtcpFeedbackInterval = TimeDelta::Millis(5000);
 
 constexpr float kDefaultLowLossThreshold = 0.02f;
 constexpr float kDefaultHighLossThreshold = 0.1f;
@@ -67,11 +64,6 @@ const size_t kNumUmaRampupMetrics =
     sizeof(kUmaRampupMetrics) / sizeof(kUmaRampupMetrics[0]);
 
 const char kBweLosExperiment[] = "WebRTC-BweLossExperiment";
-
-bool BweNoFeedbackReproEnabled() {
-  const char* env = std::getenv("SPARKRTC_REPRO_BWE_NO_FEEDBACK");
-  return env != nullptr && env[0] != '\0' && env[0] != '0';
-}
 
 bool BweLossExperimentIsEnabled() {
   std::string experiment_string =
@@ -544,15 +536,6 @@ void SendSideBandwidthEstimation::UpdateEstimate(Timestamp at_time) {
         loss_based_bandwidth_estimator_v2_.GetLossBasedResult();
     loss_based_state_ = result.state;
     UpdateTargetBitrate(result.bandwidth_estimate, at_time);
-    return;
-  }
-
-  TimeDelta time_since_loss_packet_report = at_time - last_loss_packet_report_;
-  if (!BweNoFeedbackReproEnabled() &&
-      time_since_loss_packet_report >= 1.2 * kMaxRtcpFeedbackInterval) {
-    // No recent feedback received.
-    // TODO(srte): This is likely redundant in most cases.
-    ApplyTargetLimits(at_time);
     return;
   }
 
