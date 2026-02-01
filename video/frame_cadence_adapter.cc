@@ -44,7 +44,7 @@ namespace webrtc {
 namespace {
 
 constexpr bool kAccountForEncodeSequenceContention = true;
-constexpr bool kSimulateEncodeQueueContention = true;
+constexpr bool kSimulateEncodeQueueContention = false;
 constexpr int kSimulatedEncodeQueueBlockMs = 85;
 constexpr int kSimulatedEncodeQueueBlockEveryNFrames = 5;
 
@@ -107,8 +107,7 @@ class ZeroHertzAdapterMode : public AdapterMode {
   ZeroHertzAdapterMode(TaskQueueBase* queue,
                        Clock* clock,
                        FrameCadenceAdapterInterface::Callback* callback,
-                       double max_fps,
-                       bool keep_latest_frame);
+                       double max_fps);
   ~ZeroHertzAdapterMode() { refresh_frame_requester_.Stop(); }
 
   // Reconfigures according to parameters.
@@ -203,7 +202,6 @@ class ZeroHertzAdapterMode : public AdapterMode {
   TaskQueueBase* const queue_;
   Clock* const clock_;
   FrameCadenceAdapterInterface::Callback* const callback_;
-  const bool keep_latest_frame_;
 
   // The configured max_fps.
   // TODO(crbug.com/1255737): support max_fps updates.
@@ -277,8 +275,6 @@ class FrameCadenceAdapterImpl : public FrameCadenceAdapterInterface {
   // True if we support frame entry for screenshare with a minimum frequency of
   // 0 Hz.
   const bool zero_hertz_screenshare_enabled_;
-  // If true, keep only the newest frame in zero-hertz mode.
-  const bool keep_latest_frame_in_zero_hertz_;
 
   // The two possible modes we're under.
   absl::optional<PassthroughAdapterMode> passthrough_adapter_;
@@ -315,13 +311,8 @@ ZeroHertzAdapterMode::ZeroHertzAdapterMode(
     TaskQueueBase* queue,
     Clock* clock,
     FrameCadenceAdapterInterface::Callback* callback,
-    double max_fps,
-    bool keep_latest_frame)
-    : queue_(queue),
-      clock_(clock),
-      callback_(callback),
-      keep_latest_frame_(keep_latest_frame),
-      max_fps_(max_fps) {
+    double max_fps)
+    : queue_(queue), clock_(clock), callback_(callback), max_fps_(max_fps) {
   sequence_checker_.Detach();
   MaybeStartRefreshFrameRequester();
 }
@@ -391,11 +382,6 @@ void ZeroHertzAdapterMode::OnFrame(Timestamp post_time,
 
   // Store the frame in the queue and schedule deferred processing.
   queued_frames_.push_back(frame);
-  if (keep_latest_frame_ && queued_frames_.size() > 1) {
-    // Keep only the newest frame to avoid building up latency.
-    queued_frames_.erase(queued_frames_.begin(),
-                         std::prev(queued_frames_.end()));
-  }
   int frame_id = current_frame_id_;
   current_frame_id_++;
   scheduled_repeat_ = absl::nullopt;
@@ -507,27 +493,6 @@ void ZeroHertzAdapterMode::ProcessOnDelayedCadence() {
 
   // Avoid sending the front frame for encoding (which could take a long time)
   // until we schedule a repeate.
-  if (keep_latest_frame_) {
-    const bool had_multiple_frames = queued_frames_.size() > 1;
-    VideoFrame frame_to_send =
-        had_multiple_frames ? queued_frames_.back() : queued_frames_.front();
-
-    // If there were two or more frames stored, prefer the newest frame to avoid
-    // long capture-to-encode latency. Otherwise, schedule repeats of the only
-    // available frame.
-    if (had_multiple_frames) {
-      queued_frames_.clear();
-      queued_frames_.push_back(frame_to_send);
-    } else {
-      // There's only one frame to send. Schedule a repeat sequence, which is
-      // cancelled by `current_frame_id_` getting incremented should new frames
-      // arrive.
-      ScheduleRepeat(current_frame_id_, HasQualityConverged());
-    }
-    SendFrameNow(frame_to_send);
-    return;
-  }
-
   VideoFrame front_frame = queued_frames_.front();
   if (queued_frames_.size() > 1) {
     queued_frames_.pop_front();
@@ -633,9 +598,7 @@ FrameCadenceAdapterImpl::FrameCadenceAdapterImpl(
     : clock_(clock),
       queue_(queue),
       zero_hertz_screenshare_enabled_(
-          !field_trials.IsDisabled("WebRTC-ZeroHertzScreenshare")),
-      keep_latest_frame_in_zero_hertz_(
-          !field_trials.IsDisabled("WebRTC-ZeroHertzKeepLatestFrame")) {}
+          !field_trials.IsDisabled("WebRTC-ZeroHertzScreenshare")) {}
 
 FrameCadenceAdapterImpl::~FrameCadenceAdapterImpl() {
   RTC_DLOG(LS_VERBOSE) << __func__ << " this " << this;
@@ -768,10 +731,7 @@ void FrameCadenceAdapterImpl::OnFrameOnMainQueue(
 
 bool FrameCadenceAdapterImpl::IsZeroHertzScreenshareEnabled() const {
   RTC_DCHECK_RUN_ON(queue_);
-  return zero_hertz_screenshare_enabled_ && source_constraints_.has_value() &&
-         source_constraints_->max_fps.value_or(-1) > 0 &&
-         source_constraints_->min_fps.value_or(-1) == 0 &&
-         zero_hertz_params_.has_value();
+  return false;
 }
 
 void FrameCadenceAdapterImpl::MaybeReconfigureAdapters(
@@ -783,8 +743,7 @@ void FrameCadenceAdapterImpl::MaybeReconfigureAdapters(
   if (is_zero_hertz_enabled) {
     if (!was_zero_hertz_enabled) {
       zero_hertz_adapter_.emplace(queue_, clock_, callback_,
-                                  source_constraints_->max_fps.value(),
-                                  keep_latest_frame_in_zero_hertz_);
+                                  source_constraints_->max_fps.value());
       RTC_LOG(LS_INFO) << "Zero hertz mode activated.";
       zero_hertz_adapter_created_timestamp_ = clock_->CurrentTime();
     }
