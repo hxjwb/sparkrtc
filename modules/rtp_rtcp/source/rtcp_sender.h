@@ -256,6 +256,7 @@ class RTCPSender final {
 
   mutable Mutex mutex_rtcp_sender_;
   bool sending_ RTC_GUARDED_BY(mutex_rtcp_sender_);
+  int non_sender_rtcp_sent_ RTC_GUARDED_BY(mutex_rtcp_sender_);
 
   absl::optional<Timestamp> next_time_to_send_rtcp_
       RTC_GUARDED_BY(mutex_rtcp_sender_);

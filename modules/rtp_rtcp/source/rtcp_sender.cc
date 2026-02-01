@@ -12,6 +12,8 @@
 
 #include <string.h>  // memcpy
 
+#include <cstdlib>
+
 #include <algorithm>  // std::min
 #include <memory>
 #include <utility>
@@ -56,6 +58,11 @@ const uint32_t kRtcpAnyExtendedReports = kRtcpXrReceiverReferenceTime |
                                          kRtcpXrTargetBitrate;
 constexpr int32_t kDefaultVideoReportInterval = 10;
 constexpr int32_t kDefaultAudioReportInterval = 5000;
+
+bool DropNonSenderRtcpAfterFirst() {
+  const char* env = std::getenv("SPARKRTC_REPRO_BWE_NO_FEEDBACK");
+  return env != nullptr && env[0] != '\0' && env[0] != '0';
+}
 }  // namespace
 
 // Helper to put several RTCP packets into lower layer datagram RTCP packet.
@@ -152,6 +159,7 @@ RTCPSender::RTCPSender(Configuration config)
       schedule_next_rtcp_send_evaluation_function_(
           std::move(config.schedule_next_rtcp_send_evaluation_function)),
       sending_(false),
+      non_sender_rtcp_sent_(0),
       timestamp_offset_(0),
       last_rtp_timestamp_(0),
       remote_ssrc_(0),
@@ -597,6 +605,14 @@ int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
   absl::optional<PacketSender> sender;
   {
     MutexLock lock(&mutex_rtcp_sender_);
+    if (!sending_ && DropNonSenderRtcpAfterFirst()) {
+      if (non_sender_rtcp_sent_ > 0) {
+        RTC_LOG(LS_WARNING)
+            << "Dropping RTCP after first non-sender packet (repro).";
+        return 0;
+      }
+      ++non_sender_rtcp_sent_;
+    }
     sender.emplace(callback, max_packet_size_);
     auto result = ComputeCompoundRTCPPacket(feedback_state, packet_type,
                                             nack_size, nack_list, *sender);

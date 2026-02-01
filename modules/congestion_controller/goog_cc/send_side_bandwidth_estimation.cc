@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <string>
@@ -66,6 +67,11 @@ const size_t kNumUmaRampupMetrics =
     sizeof(kUmaRampupMetrics) / sizeof(kUmaRampupMetrics[0]);
 
 const char kBweLosExperiment[] = "WebRTC-BweLossExperiment";
+
+bool BweNoFeedbackReproEnabled() {
+  const char* env = std::getenv("SPARKRTC_REPRO_BWE_NO_FEEDBACK");
+  return env != nullptr && env[0] != '\0' && env[0] != '0';
+}
 
 bool BweLossExperimentIsEnabled() {
   std::string experiment_string =
@@ -542,54 +548,60 @@ void SendSideBandwidthEstimation::UpdateEstimate(Timestamp at_time) {
   }
 
   TimeDelta time_since_loss_packet_report = at_time - last_loss_packet_report_;
-  if (time_since_loss_packet_report < 1.2 * kMaxRtcpFeedbackInterval) {
-    // We only care about loss above a given bitrate threshold.
-    float loss = last_fraction_loss_ / 256.0f;
-    // We only make decisions based on loss when the bitrate is above a
-    // threshold. This is a crude way of handling loss which is uncorrelated
-    // to congestion.
-    if (current_target_ < bitrate_threshold_ || loss <= low_loss_threshold_) {
-      // Loss < 2%: Increase rate by 8% of the min bitrate in the last
-      // kBweIncreaseInterval.
-      // Note that by remembering the bitrate over the last second one can
-      // rampup up one second faster than if only allowed to start ramping
-      // at 8% per second rate now. E.g.:
-      //   If sending a constant 100kbps it can rampup immediately to 108kbps
-      //   whenever a receiver report is received with lower packet loss.
-      //   If instead one would do: current_bitrate_ *= 1.08^(delta time),
-      //   it would take over one second since the lower packet loss to achieve
-      //   108kbps.
-      DataRate new_bitrate = DataRate::BitsPerSec(
-          min_bitrate_history_.front().second.bps() * 1.08 + 0.5);
+  if (!BweNoFeedbackReproEnabled() &&
+      time_since_loss_packet_report >= 1.2 * kMaxRtcpFeedbackInterval) {
+    // No recent feedback received.
+    // TODO(srte): This is likely redundant in most cases.
+    ApplyTargetLimits(at_time);
+    return;
+  }
 
-      // Add 1 kbps extra, just to make sure that we do not get stuck
-      // (gives a little extra increase at low rates, negligible at higher
-      // rates).
-      new_bitrate += DataRate::BitsPerSec(1000);
-      UpdateTargetBitrate(new_bitrate, at_time);
-      return;
-    } else if (current_target_ > bitrate_threshold_) {
-      if (loss <= high_loss_threshold_) {
-        // Loss between 2% - 10%: Do nothing.
-      } else {
-        // Loss > 10%: Limit the rate decreases to once a kBweDecreaseInterval
-        // + rtt.
-        if (!has_decreased_since_last_fraction_loss_ &&
-            (at_time - time_last_decrease_) >=
-                (kBweDecreaseInterval + last_round_trip_time_)) {
-          time_last_decrease_ = at_time;
+  // We only care about loss above a given bitrate threshold.
+  float loss = last_fraction_loss_ / 256.0f;
+  // We only make decisions based on loss when the bitrate is above a
+  // threshold. This is a crude way of handling loss which is uncorrelated
+  // to congestion.
+  if (current_target_ < bitrate_threshold_ || loss <= low_loss_threshold_) {
+    // Loss < 2%: Increase rate by 8% of the min bitrate in the last
+    // kBweIncreaseInterval.
+    // Note that by remembering the bitrate over the last second one can
+    // rampup up one second faster than if only allowed to start ramping
+    // at 8% per second rate now. E.g.:
+    //   If sending a constant 100kbps it can rampup immediately to 108kbps
+    //   whenever a receiver report is received with lower packet loss.
+    //   If instead one would do: current_bitrate_ *= 1.08^(delta time),
+    //   it would take over one second since the lower packet loss to achieve
+    //   108kbps.
+    DataRate new_bitrate = DataRate::BitsPerSec(
+        min_bitrate_history_.front().second.bps() * 1.08 + 0.5);
 
-          // Reduce rate:
-          //   newRate = rate * (1 - 0.5*lossRate);
-          //   where packetLoss = 256*lossRate;
-          DataRate new_bitrate = DataRate::BitsPerSec(
-              (current_target_.bps() *
-               static_cast<double>(512 - last_fraction_loss_)) /
-              512.0);
-          has_decreased_since_last_fraction_loss_ = true;
-          UpdateTargetBitrate(new_bitrate, at_time);
-          return;
-        }
+    // Add 1 kbps extra, just to make sure that we do not get stuck
+    // (gives a little extra increase at low rates, negligible at higher
+    // rates).
+    new_bitrate += DataRate::BitsPerSec(1000);
+    UpdateTargetBitrate(new_bitrate, at_time);
+    return;
+  } else if (current_target_ > bitrate_threshold_) {
+    if (loss <= high_loss_threshold_) {
+      // Loss between 2% - 10%: Do nothing.
+    } else {
+      // Loss > 10%: Limit the rate decreases to once a kBweDecreaseInterval
+      // + rtt.
+      if (!has_decreased_since_last_fraction_loss_ &&
+          (at_time - time_last_decrease_) >=
+              (kBweDecreaseInterval + last_round_trip_time_)) {
+        time_last_decrease_ = at_time;
+
+        // Reduce rate:
+        //   newRate = rate * (1 - 0.5*lossRate);
+        //   where packetLoss = 256*lossRate;
+        DataRate new_bitrate = DataRate::BitsPerSec(
+            (current_target_.bps() *
+             static_cast<double>(512 - last_fraction_loss_)) /
+            512.0);
+        has_decreased_since_last_fraction_loss_ = true;
+        UpdateTargetBitrate(new_bitrate, at_time);
+        return;
       }
     }
   }
