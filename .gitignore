@@ -83,13 +83,5 @@
 *.lib
 *.dll
 .aider*
-profix/logs/*
-profix/cases/*
-profix/archive/*
-profix/recon/*
-profix/*.txt
-profix/analysis/*
-!profix/analysis/
-!profix/analysis/simple_compare_3/
-!profix/analysis/simple_compare_3/**
-*.pdf
+/profix
+/profix/*
