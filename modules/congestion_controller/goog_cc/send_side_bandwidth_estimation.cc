@@ -519,10 +519,8 @@ void SendSideBandwidthEstimation::UpdateEstimate(Timestamp at_time) {
   }
   UpdateMinHistory(at_time);
   if (last_loss_packet_report_.IsInfinite()) {
-    // No feedback received.
-    // TODO(srte): This is likely redundant in most cases.
-    ApplyTargetLimits(at_time);
-    return;
+    last_loss_packet_report_ = at_time;
+    last_fraction_loss_ = 0;
   }
 
   if (LossBasedBandwidthEstimatorV1ReadyForUse()) {
@@ -542,6 +540,15 @@ void SendSideBandwidthEstimation::UpdateEstimate(Timestamp at_time) {
   }
 
   TimeDelta time_since_loss_packet_report = at_time - last_loss_packet_report_;
+  if (time_since_loss_packet_report > kMaxRtcpFeedbackInterval) {
+    delay_based_limit_ = DataRate::PlusInfinity();
+    receiver_limit_ = DataRate::PlusInfinity();
+    DataRate new_bitrate = DataRate::BitsPerSec(
+        current_target_.bps() * 1.08 + 0.5);
+    new_bitrate += DataRate::BitsPerSec(1000);
+    UpdateTargetBitrate(new_bitrate, at_time);
+    return;
+  }
   if (time_since_loss_packet_report < 1.2 * kMaxRtcpFeedbackInterval) {
     // We only care about loss above a given bitrate threshold.
     float loss = last_fraction_loss_ / 256.0f;
