@@ -715,6 +715,10 @@ void ModuleRtpRtcpImpl2::OnStallReport(
   if (rtp_sender_) {
     FrameTimeWindow* frame_time_window = rtp_sender_->packet_sender.GetFrameTimeWindow();
     if (frame_time_window) {
+      const int64_t now_ms = clock_->TimeInMilliseconds();
+      const RtcpPacketTypeCounter counter =
+          rtcp_receiver_.GetPacketTypeCounter();
+      frame_time_window->AddRtcpPacketTypeCounter(now_ms, counter);
       // Convert decode delays to the format expected by PrintProfilingInfo
       std::vector<webrtc::DecodeDelayInfo> delays;
       for (const auto& delay_info : decode_delays) {
@@ -724,7 +728,6 @@ void ModuleRtpRtcpImpl2::OnStallReport(
         info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
         delays.push_back(info);
       }
-      RtcpPacketTypeCounter counter = rtcp_receiver_.GetPacketTypeCounter();
       uint32_t nack_sent = counter.nack_requests;
       frame_time_window->PrintProfilingInfo(delays, stall_rtp_timestamp,
                                             stall_gap_ms, nack_sent,

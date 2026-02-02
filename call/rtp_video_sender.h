@@ -45,6 +45,7 @@
 namespace webrtc {
 
 class FrameEncryptorInterface;
+class Clock;
 class RtpTransportControllerSendInterface;
 
 namespace webrtc_internal_rtp_video_sender {
@@ -148,6 +149,9 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   uint32_t GetProtectionBitrateBps() const RTC_LOCKS_EXCLUDED(mutex_) override;
   void SetEncodingData(size_t width, size_t height, size_t num_temporal_layers)
       RTC_LOCKS_EXCLUDED(mutex_) override;
+  FrameTimeWindow* GetFrameTimeWindow() override {
+    return &frame_time_window_;
+  }
 
   std::vector<RtpSequenceNumberMap::Info> GetSentRtpPacketInfos(
       uint32_t ssrc,
@@ -176,6 +180,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   const FieldTrialsView& field_trials_;
   const bool use_frame_rate_for_overhead_;
   const bool has_packet_feedback_;
+  Clock* const clock_;
 
   // Semantically equivalent to checking for `transport_->GetWorkerQueue()`
   // but some tests need to be updated to call from the correct context.

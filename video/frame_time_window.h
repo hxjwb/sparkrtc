@@ -17,6 +17,7 @@
 
 #include "absl/types/optional.h"
 #include "api/units/timestamp.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
 
 namespace webrtc {
 
@@ -72,7 +73,7 @@ struct DecodeDelayInfo {
 
 class FrameTimeWindow {
  public:
-  explicit FrameTimeWindow(size_t window_size = 100);
+  explicit FrameTimeWindow(size_t window_size = 500);
   ~FrameTimeWindow();
 
   void AddFrame(uint32_t rtp_timestamp,
@@ -102,6 +103,11 @@ class FrameTimeWindow {
   void SetVideoDimensions(int width, int height);
   void SetFpsNominal(int fps);
   void SetRtxFecEnabled(bool rtx_enabled, bool fec_enabled);
+
+  void AddEncoderTargetRate(int64_t time_ms, uint32_t bitrate_bps);
+  void AddBweTargetRate(int64_t time_ms, uint32_t bitrate_bps);
+  void AddRtcpPacketTypeCounter(int64_t time_ms,
+                                const RtcpPacketTypeCounter& counter);
   
   void PrintProfilingInfo(const std::vector<DecodeDelayInfo>& decode_delays,
                           uint32_t stall_rtp_timestamp,
@@ -116,6 +122,23 @@ class FrameTimeWindow {
   std::deque<PacketTimingInfo> rtx_packet_window_;
   StallReportHeader report_header_;
   uint32_t next_repair_id_ = 1;
+  int64_t last_rtcp_digest_ms_ = -1;
+
+  struct ControlDigestEntry {
+    enum class Type {
+      kEncoderTargetRate,
+      kBweTargetRate,
+      kRtcpSignal,
+    };
+    int64_t time_ms = -1;
+    Type type = Type::kEncoderTargetRate;
+    uint32_t bitrate_bps = 0;
+    RtcpPacketTypeCounter rtcp_counter;
+  };
+
+  std::deque<ControlDigestEntry> control_digests_;
+  absl::optional<uint32_t> last_encoder_target_bps_;
+  absl::optional<uint32_t> last_bwe_target_bps_;
 
   FrameTimingInfo* FindFrameByTimestamp(uint32_t rtp_timestamp);
   void MaintainWindowSize();

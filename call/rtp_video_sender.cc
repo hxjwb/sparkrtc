@@ -384,6 +384,7 @@ RtpVideoSender::RtpVideoSender(
           field_trials_.Lookup("WebRTC-Video-UseFrameRateForOverhead"),
           "Enabled")),
       has_packet_feedback_(TransportSeqNumExtensionConfigured(rtp_config)),
+      clock_(clock),
       active_(false),
       fec_controller_(std::move(fec_controller)),
       fec_allowed_(true),
@@ -891,6 +892,10 @@ void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
   uint32_t post_encode_overhead_bps = std::min(
       GetPostEncodeOverhead().bps<uint32_t>(), encoder_target_rate_bps_ / 2);
   encoder_target_rate_bps_ -= post_encode_overhead_bps;
+
+  const int64_t now_ms = clock_->TimeInMilliseconds();
+  frame_time_window_.AddBweTargetRate(now_ms, update.target_bitrate.bps());
+  frame_time_window_.AddEncoderTargetRate(now_ms, encoder_target_rate_bps_);
 
   loss_mask_vector_.clear();
 
