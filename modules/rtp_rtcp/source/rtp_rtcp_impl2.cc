@@ -707,7 +707,8 @@ void ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks(
 void ModuleRtpRtcpImpl2::OnStallReport(
     const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays,
     uint32_t stall_rtp_timestamp,
-    uint32_t stall_gap_ms) {
+    uint32_t stall_gap_ms,
+    uint32_t stall_report_size_bytes) {
   RTC_LOG(LS_INFO) << "Processing stall report with " << decode_delays.size()
                    << " frames";
   
@@ -726,14 +727,45 @@ void ModuleRtpRtcpImpl2::OnStallReport(
         info.rtp_timestamp = delay_info.rtp_timestamp;
         info.decode_delay_us = delay_info.decode_delay_us;
         info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
+        info.decode_end_time_us = delay_info.decode_end_time_us;
         delays.push_back(info);
       }
       uint32_t nack_sent = counter.nack_requests;
       frame_time_window->PrintProfilingInfo(delays, stall_rtp_timestamp,
-                                            stall_gap_ms, nack_sent,
+                                            stall_gap_ms, stall_report_size_bytes,
+                                            nack_sent,
                                             twcc_time_correlator_);
     }
   }
+}
+
+void ModuleRtpRtcpImpl2::OnRtcpFeedbackReceived(
+    RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind kind,
+    int64_t time_ms) {
+  if (!rtp_sender_) {
+    return;
+  }
+  FrameTimeWindow* frame_time_window =
+      rtp_sender_->packet_sender.GetFrameTimeWindow();
+  if (!frame_time_window) {
+    return;
+  }
+  const char* label = "RTCP";
+  switch (kind) {
+    case RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind::kTransportFeedback:
+      label = "TWCC";
+      break;
+    case RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind::kReceiverReport:
+      label = "RR";
+      break;
+    case RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind::kRtt:
+      label = "RTT";
+      break;
+    case RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind::kRemb:
+      label = "REMB";
+      break;
+  }
+  frame_time_window->AddRtcpFeedbackEvent(time_ms, label);
 }
 
 void ModuleRtpRtcpImpl2::set_rtt_ms(int64_t rtt_ms) {

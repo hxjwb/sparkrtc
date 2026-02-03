@@ -175,6 +175,16 @@ void FrameTimeWindow::AddRtcpPacketTypeCounter(
   MaintainWindowSize();
 }
 
+void FrameTimeWindow::AddRtcpFeedbackEvent(int64_t time_ms,
+                                           absl::string_view kind) {
+  ControlDigestEntry entry;
+  entry.time_ms = time_ms;
+  entry.type = ControlDigestEntry::Type::kRtcpFeedback;
+  entry.feedback_kind = std::string(kind);
+  control_digests_.push_back(std::move(entry));
+  MaintainWindowSize();
+}
+
 uint32_t FrameTimeWindow::AllocateRepairId() {
   return next_repair_id_++;
 }
@@ -206,6 +216,15 @@ void UpdateMinTimeMs(int64_t time_ms, int64_t* min_time_ms) {
   }
   if (*min_time_ms < 0 || time_ms < *min_time_ms) {
     *min_time_ms = time_ms;
+  }
+}
+
+void UpdateMaxTimeMs(int64_t time_ms, int64_t* max_time_ms) {
+  if (time_ms < 0) {
+    return;
+  }
+  if (*max_time_ms < 0 || time_ms > *max_time_ms) {
+    *max_time_ms = time_ms;
   }
 }
 
@@ -373,6 +392,7 @@ struct RepairDigestEntry {
   uint32_t repair_id = 0;
   const char* type = "RTX";
   absl::optional<uint32_t> target_frame_ts;
+  std::string target_frames_summary;
   std::vector<uint16_t> target_seqs;
   std::vector<uint16_t> repair_packet_seqs;
   int repair_packet_count = 0;
@@ -390,6 +410,7 @@ struct RepairDigestEntry {
   int recovered_seq_count = 0;
   int too_late_seq_count = 0;
   int failed_seq_count = 0;
+  std::string frame_outcome_summary;
 };
 
 struct FrameDigestEntry {
@@ -407,6 +428,7 @@ struct FrameDigestEntry {
   int64_t deliver_to_decoder_ms = -1;
   int64_t decode_end_ms = -1;
   int64_t decode_time_ms = -1;
+  int64_t decode_end_time_ms_rx = -1;
   int packets_received = -1;
   int packets_lost = -1;
   int packets_recovered_rtx = 0;
@@ -419,6 +441,7 @@ void FrameTimeWindow::PrintProfilingInfo(
     const std::vector<DecodeDelayInfo>& decode_delays,
     uint32_t stall_rtp_timestamp,
     int64_t stall_gap_ms,
+    uint32_t stall_report_size_bytes,
     uint32_t nack_sent,
     TwccTimeCorrelator* twcc_correlator) {
   RTC_LOG(LS_INFO) << "=== Profiling Report ===";
@@ -532,6 +555,14 @@ void FrameTimeWindow::PrintProfilingInfo(
     int packets_received = -1;
     int packets_lost = -1;
     int twcc_received = 0;
+    auto update_recv_time_ms = [&](int64_t recv_time_ms) {
+      if (first_recv_ms == -1 || recv_time_ms < first_recv_ms) {
+        first_recv_ms = recv_time_ms;
+      }
+      if (last_recv_ms == -1 || recv_time_ms > last_recv_ms) {
+        last_recv_ms = recv_time_ms;
+      }
+    };
     for (const auto& packet_info : media_packets) {
       if (first_send_ms == -1 || packet_info.send_time_ms < first_send_ms) {
         first_send_ms = packet_info.send_time_ms;
@@ -541,18 +572,25 @@ void FrameTimeWindow::PrintProfilingInfo(
       }
       if (twcc_correlator) {
         auto packet_time =
-            twcc_correlator->GetPacketTime(packet_info.transport_sequence_number);
+            twcc_correlator->GetPacketTime(
+                packet_info.transport_sequence_number);
         if (packet_time.has_value()) {
-          int64_t recv_time_ms = packet_time->receive_time_us / 1000;
-          if (first_recv_ms == -1 || recv_time_ms < first_recv_ms) {
-            first_recv_ms = recv_time_ms;
-          }
-          if (last_recv_ms == -1 || recv_time_ms > last_recv_ms) {
-            last_recv_ms = recv_time_ms;
-          }
+          update_recv_time_ms(packet_time->receive_time_us / 1000);
           ++twcc_received;
         }
       }
+    }
+    for (const auto& packet_info : frame_rtx_packets) {
+      if (!twcc_correlator) {
+        continue;
+      }
+      auto packet_time =
+          twcc_correlator->GetPacketTime(
+              packet_info.transport_sequence_number);
+      if (!packet_time.has_value()) {
+        continue;
+      }
+      update_recv_time_ms(packet_time->receive_time_us / 1000);
     }
 
     const int packets_expected = static_cast<int>(media_packets.size());
@@ -658,6 +696,9 @@ void FrameTimeWindow::PrintProfilingInfo(
     frame_entry.deliver_to_decoder_ms = deliver_ms;
     frame_entry.decode_end_ms = decode_end;
     frame_entry.decode_time_ms = decode_time_ms;
+    if (decode_info.decode_end_time_us > 0) {
+      frame_entry.decode_end_time_ms_rx = decode_info.decode_end_time_us / 1000;
+    }
     frame_entry.packets_received = packets_received;
     frame_entry.packets_lost = packets_lost;
     frame_entry.packets_recovered_rtx = packets_recovered_rtx;
@@ -834,12 +875,14 @@ void FrameTimeWindow::PrintProfilingInfo(
 
       std::set<uint16_t> target_seqs_set;
       std::set<uint32_t> target_frames_set;
+      std::map<uint32_t, int> target_frame_counts;
       for (const auto& packet : batch) {
         if (packet.rtx_target_seq.has_value()) {
           target_seqs_set.insert(*packet.rtx_target_seq);
           auto frame_it = seq_to_frame.find(*packet.rtx_target_seq);
           if (frame_it != seq_to_frame.end()) {
             target_frames_set.insert(frame_it->second);
+            ++target_frame_counts[frame_it->second];
           }
         }
       }
@@ -910,6 +953,12 @@ void FrameTimeWindow::PrintProfilingInfo(
       } else {
         repair_entry.outcome = "RECOVERED";
       }
+      struct OutcomeCounts {
+        int recovered = 0;
+        int too_late = 0;
+        int failed = 0;
+      };
+      std::map<uint32_t, OutcomeCounts> frame_outcomes;
       for (uint16_t target_seq : target_seqs_set) {
         int64_t target_last_recv_ms = -1;
         for (const auto& packet : batch) {
@@ -938,10 +987,17 @@ void FrameTimeWindow::PrintProfilingInfo(
             target_deliver_ms = it->second;
           }
         }
+        uint32_t frame_ts = 0;
+        if (frame_it != seq_to_frame.end()) {
+          frame_ts = frame_it->second;
+        }
         if (target_last_recv_ms < 0) {
           ++repair_entry.failed_seq_count;
           if (repair_entry.failed_seqs.size() < kMaxSeqsPerOutcome) {
             repair_entry.failed_seqs.push_back(target_seq);
+          }
+          if (frame_ts != 0) {
+            ++frame_outcomes[frame_ts].failed;
           }
         } else if (target_deliver_ms >= 0 &&
                    target_last_recv_ms > target_deliver_ms) {
@@ -949,12 +1005,44 @@ void FrameTimeWindow::PrintProfilingInfo(
           if (repair_entry.too_late_seqs.size() < kMaxSeqsPerOutcome) {
             repair_entry.too_late_seqs.push_back(target_seq);
           }
+          if (frame_ts != 0) {
+            ++frame_outcomes[frame_ts].too_late;
+          }
         } else {
           ++repair_entry.recovered_seq_count;
           if (repair_entry.recovered_seqs.size() < kMaxSeqsPerOutcome) {
             repair_entry.recovered_seqs.push_back(target_seq);
           }
+          if (frame_ts != 0) {
+            ++frame_outcomes[frame_ts].recovered;
+          }
         }
+      }
+      if (!target_frame_counts.empty()) {
+        std::ostringstream frames_summary;
+        bool first = true;
+        for (const auto& entry : target_frame_counts) {
+          if (!first) {
+            frames_summary << ",";
+          }
+          first = false;
+          frames_summary << entry.first << "(" << entry.second << ")";
+        }
+        repair_entry.target_frames_summary = frames_summary.str();
+      }
+      if (!frame_outcomes.empty()) {
+        std::ostringstream outcomes_summary;
+        bool first = true;
+        for (const auto& entry : frame_outcomes) {
+          if (!first) {
+            outcomes_summary << ";";
+          }
+          first = false;
+          outcomes_summary << entry.first << ":r" << entry.second.recovered
+                           << "/l" << entry.second.too_late << "/f"
+                           << entry.second.failed;
+        }
+        repair_entry.frame_outcome_summary = outcomes_summary.str();
       }
       if (repair_entry.recovered_seq_count > 0 &&
           repair_entry.too_late_seq_count == 0 &&
@@ -1012,6 +1100,9 @@ void FrameTimeWindow::PrintProfilingInfo(
   std::vector<ControlDigestEntry> control_digests(control_digests_.begin(),
                                                   control_digests_.end());
   int64_t min_time_ms = -1;
+  int64_t min_capture_ms = -1;
+  int64_t max_capture_ms = -1;
+  int64_t max_last_recv_ms = -1;
   for (const auto& frame : frame_digests) {
     UpdateMinTimeMs(frame.capture_time_ms, &min_time_ms);
     UpdateMinTimeMs(frame.enc_start_ms, &min_time_ms);
@@ -1022,6 +1113,9 @@ void FrameTimeWindow::PrintProfilingInfo(
     UpdateMinTimeMs(frame.last_recv_ms, &min_time_ms);
     UpdateMinTimeMs(frame.deliver_to_decoder_ms, &min_time_ms);
     UpdateMinTimeMs(frame.decode_end_ms, &min_time_ms);
+    UpdateMinTimeMs(frame.capture_time_ms, &min_capture_ms);
+    UpdateMaxTimeMs(frame.capture_time_ms, &max_capture_ms);
+    UpdateMaxTimeMs(frame.last_recv_ms, &max_last_recv_ms);
   }
   for (const auto& packet : packet_digests) {
     UpdateMinTimeMs(packet.send_time_ms, &min_time_ms);
@@ -1038,6 +1132,16 @@ void FrameTimeWindow::PrintProfilingInfo(
     UpdateMinTimeMs(control.time_ms, &min_time_ms);
   }
   const int64_t time_base_ms = (min_time_ms >= 0) ? min_time_ms : 0;
+  const int64_t max_window_ms =
+      (max_last_recv_ms >= 0) ? max_last_recv_ms : max_capture_ms;
+  const bool has_capture_window =
+      (min_capture_ms >= 0 && max_window_ms >= 0);
+  auto control_in_window = [&](int64_t time_ms) {
+    if (!has_capture_window) {
+      return true;
+    }
+    return time_ms >= min_capture_ms && time_ms <= max_window_ms;
+  };
 
   std::unordered_set<uint32_t> important_rtp_timestamps;
   important_rtp_timestamps.insert(stall_rtp_timestamp);
@@ -1250,6 +1354,7 @@ void FrameTimeWindow::PrintProfilingInfo(
                    << " time_base_ms=" << time_base_ms;
   RTC_LOG(LS_INFO) << "stall_rtp_ts=" << stall_rtp_timestamp
                    << " stall_gap_ms=" << stall_gap_ms
+                   << " stall_report_size_bytes=" << stall_report_size_bytes
                    << " frame_count_in_window=" << decode_delays.size();
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "[WINDOW_SUMMARY]";
@@ -1266,67 +1371,70 @@ void FrameTimeWindow::PrintProfilingInfo(
                    << " p95_dec_gap_ms=" << p95_dec_gap;
   RTC_LOG(LS_INFO) << "coarse_tags=" << tags_joined;
   RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "[FRAME_DIGEST]";
+  RTC_LOG(LS_INFO) << "[TIMELINE_DIGEST]";
+  int64_t prev_capture_time_ms = -1;
+  int64_t prev_decode_end_time_ms_rx = -1;
   for (size_t i = 0; i < frame_digests.size(); ++i) {
     const auto& f = frame_digests[i];
-    RTC_LOG(LS_INFO) << (i + 1) << ") rtp_ts=" << f.rtp_timestamp
-                     << " frame_type=" << (f.is_keyframe ? "key" : "delta")
-                     << " frame_size_bytes=" << f.frame_size_bytes
-                     << " packets_expected=" << f.packets_expected
-                     << " capture_ms="
-                     << RelativeTimeMs(f.capture_time_ms, time_base_ms)
-                     << " enc_start_ms="
-                     << RelativeTimeMs(f.enc_start_ms, time_base_ms)
-                     << " enc_end_ms="
-                     << RelativeTimeMs(f.enc_end_ms, time_base_ms)
-                     << " first_send_ms="
-                     << RelativeTimeMs(f.first_send_ms, time_base_ms)
-                     << " last_send_ms="
-                     << RelativeTimeMs(f.last_send_ms, time_base_ms)
-                     << " first_recv_ms="
-                     << RelativeTimeMs(f.first_recv_ms, time_base_ms)
-                     << " last_recv_ms="
-                     << RelativeTimeMs(f.last_recv_ms, time_base_ms)
-                     << " deliver_to_decoder_ms="
-                     << RelativeTimeMs(f.deliver_to_decoder_ms, time_base_ms)
-                     << " decode_end_ms="
-                     << RelativeTimeMs(f.decode_end_ms, time_base_ms)
-                     << " decode_time_ms=" << f.decode_time_ms
-                     << " packets_received=" << f.packets_received
-                     << " packets_lost=" << f.packets_lost
-                     << " packets_recovered_rtx=" << f.packets_recovered_rtx
-                     << " packets_recovered_fec=" << f.packets_recovered_fec;
-  }
-  RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "[PACKET_DIGEST]";
-  for (size_t i = 0; i < packet_digests.size(); ++i) {
-    const auto& p = packet_digests[i];
-    if (!is_important_packet(p)) {
-      continue;
-    }
-    RTC_LOG(LS_INFO) << (i + 1) << ") seq=" << p.rtp_sequence_number
-                     << " rtp_ts=" << p.rtp_timestamp
-                     << " send_ms="
-                     << RelativeTimeMs(p.send_time_ms, time_base_ms)
-                     << " recv_ms="
-                     << RelativeTimeMs(p.recv_time_ms, time_base_ms)
-                     << " size_bytes=" << p.size_bytes
-                     << " kind=" << PacketKindToString(p.kind);
+    const auto gap_or_minus_one = [](int64_t start_ms, int64_t end_ms) {
+      if (start_ms < 0 || end_ms < 0) {
+        return int64_t{-1};
+      }
+      return end_ms - start_ms;
+    };
+    const int64_t capture_ms = RelativeTimeMs(f.capture_time_ms, time_base_ms);
+    const int64_t prev_capture_gap_ms =
+        gap_or_minus_one(prev_capture_time_ms, f.capture_time_ms);
+    const int64_t capture_to_enc_ms =
+        gap_or_minus_one(f.capture_time_ms, f.enc_start_ms);
+    const int64_t encode_ms = gap_or_minus_one(f.enc_start_ms, f.enc_end_ms);
+    const int64_t enc_to_first_send_ms =
+        gap_or_minus_one(f.enc_end_ms, f.first_send_ms);
+    const int64_t first_send_to_last_recv_ms =
+        gap_or_minus_one(f.first_send_ms, f.last_recv_ms);
+    const int64_t last_recv_to_deliver_ms =
+        gap_or_minus_one(f.last_recv_ms, f.deliver_to_decoder_ms);
+    const int64_t decode_ms = f.decode_time_ms;
+    const int64_t prev_decode_end_gap_ms =
+        gap_or_minus_one(prev_decode_end_time_ms_rx, f.decode_end_time_ms_rx);
+    const int stall_flag = (f.rtp_timestamp == stall_rtp_timestamp) ? 1 : 0;
+    RTC_LOG(LS_INFO) << capture_ms << " rtpts=" << f.rtp_timestamp
+                     << " gaps=(" << prev_capture_gap_ms << " "
+                     << capture_to_enc_ms << " " << encode_ms << " "
+                     << enc_to_first_send_ms << " "
+                     << first_send_to_last_recv_ms << " "
+                     << last_recv_to_deliver_ms << " " << decode_ms << ")"
+                     << " stall=" << (stall_flag ? "True" : "False")
+                     << " prev_gap=" << prev_decode_end_gap_ms;
+    prev_capture_time_ms = f.capture_time_ms;
+    prev_decode_end_time_ms_rx = f.decode_end_time_ms_rx;
   }
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "[CONTROL_DIGEST]";
   std::vector<const ControlDigestEntry*> rtcp_events;
   std::vector<std::pair<int64_t, uint32_t>> bwe_points;
   std::vector<std::pair<int64_t, uint32_t>> encoder_points;
+  std::vector<std::pair<int64_t, uint32_t>> encoder_points_abs;
   for (const auto& c : control_digests) {
     if (c.type == ControlDigestEntry::Type::kRtcpSignal) {
-      rtcp_events.push_back(&c);
+      if (control_in_window(c.time_ms)) {
+        rtcp_events.push_back(&c);
+      }
+    } else if (c.type == ControlDigestEntry::Type::kRtcpFeedback) {
+      if (control_in_window(c.time_ms)) {
+        rtcp_events.push_back(&c);
+      }
     } else if (c.type == ControlDigestEntry::Type::kBweTargetRate) {
-      bwe_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
-                              c.bitrate_bps);
+      if (control_in_window(c.time_ms)) {
+        bwe_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
+                                c.bitrate_bps);
+      }
     } else if (c.type == ControlDigestEntry::Type::kEncoderTargetRate) {
-      encoder_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
-                                  c.bitrate_bps);
+      if (control_in_window(c.time_ms)) {
+        encoder_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
+                                    c.bitrate_bps);
+        encoder_points_abs.emplace_back(c.time_ms, c.bitrate_bps);
+      }
     }
   }
 
@@ -1334,15 +1442,30 @@ void FrameTimeWindow::PrintProfilingInfo(
   if (rtcp_events.empty()) {
     RTC_LOG(LS_INFO) << "none";
   } else {
+    std::map<int64_t, std::set<std::string>> events_by_time;
     for (const auto* c : rtcp_events) {
-      RTC_LOG(LS_INFO)
-          << RelativeTimeMs(c->time_ms, time_base_ms)
-          << ": nack_pkts=" << c->rtcp_counter.nack_packets
-          << " pli_pkts=" << c->rtcp_counter.pli_packets
-          << " fir_pkts=" << c->rtcp_counter.fir_packets
-          << " nack_requests=" << c->rtcp_counter.nack_requests
-          << " unique_nack_requests="
-          << c->rtcp_counter.unique_nack_requests;
+      if (c->type == ControlDigestEntry::Type::kRtcpFeedback) {
+        events_by_time[c->time_ms].insert(c->feedback_kind);
+      } else {
+        events_by_time[c->time_ms].insert("NACK");
+        if (c->rtcp_counter.pli_packets > 0) {
+          events_by_time[c->time_ms].insert("PLI");
+        }
+        if (c->rtcp_counter.fir_packets > 0) {
+          events_by_time[c->time_ms].insert("FIR");
+        }
+      }
+    }
+    for (const auto& entry : events_by_time) {
+      std::string joined;
+      for (auto it = entry.second.begin(); it != entry.second.end(); ++it) {
+        if (it != entry.second.begin()) {
+          joined.append(",");
+        }
+        joined.append(*it);
+      }
+      RTC_LOG(LS_INFO) << RelativeTimeMs(entry.first, time_base_ms)
+                       << ": type=" << (joined.empty() ? "-" : joined);
     }
   }
 
@@ -1357,12 +1480,16 @@ void FrameTimeWindow::PrintProfilingInfo(
     RTC_LOG(LS_INFO) << RelativeTimeMs(repair.repair_first_send_ms,
                                        time_base_ms)
                      << ": repair_id=" << repair.repair_id
-                     << " target_frame_ts="
-                     << (repair.target_frame_ts.has_value()
-                             ? std::to_string(*repair.target_frame_ts)
+                     << " target_frames="
+                     << (!repair.target_frames_summary.empty()
+                             ? repair.target_frames_summary
                              : "0")
                      << " packet_count=" << repair.repair_packet_count
                      << " outcome=" << repair.outcome
+                     << " frame_outcomes="
+                     << (!repair.frame_outcome_summary.empty()
+                             ? repair.frame_outcome_summary
+                             : "-")
                      << " duration_ms=" << repair.duration_ms
                      << " last_recv_ms="
                      << RelativeTimeMs(repair.repair_last_recv_ms, time_base_ms);
@@ -1377,6 +1504,85 @@ void FrameTimeWindow::PrintProfilingInfo(
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "ENCODER_TARGET_RATE (compressed):";
   RTC_LOG(LS_INFO) << CompressRateSeries(encoder_points);
+  if (report_header_.fps_nominal > 0 && !encoder_points_abs.empty()) {
+    std::sort(encoder_points_abs.begin(), encoder_points_abs.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    struct SizeOutlier {
+      uint32_t rtp_ts;
+      size_t size_bytes;
+      int64_t expected_bytes;
+      double ratio;
+    };
+    std::vector<SizeOutlier> over;
+    std::vector<SizeOutlier> under;
+    for (const auto& frame : frame_digests) {
+      if (frame.capture_time_ms < 0 || frame.frame_size_bytes == 0) {
+        continue;
+      }
+      auto it = std::upper_bound(
+          encoder_points_abs.begin(), encoder_points_abs.end(),
+          frame.capture_time_ms,
+          [](int64_t value, const auto& entry) { return value < entry.first; });
+      if (it == encoder_points_abs.begin()) {
+        continue;
+      }
+      --it;
+      const uint32_t bps = it->second;
+      if (bps == 0) {
+        continue;
+      }
+      const double expected =
+          static_cast<double>(bps) / 8.0 / report_header_.fps_nominal;
+      if (expected <= 0.0) {
+        continue;
+      }
+      const double ratio = frame.frame_size_bytes / expected;
+      if (ratio > 1.3) {
+        over.push_back(SizeOutlier{frame.rtp_timestamp, frame.frame_size_bytes,
+                                   static_cast<int64_t>(std::round(expected)),
+                                   ratio});
+      } else if (ratio < 0.7) {
+        under.push_back(SizeOutlier{frame.rtp_timestamp, frame.frame_size_bytes,
+                                    static_cast<int64_t>(std::round(expected)),
+                                    ratio});
+      }
+    }
+    auto by_ratio_desc = [](const SizeOutlier& a, const SizeOutlier& b) {
+      return a.ratio > b.ratio;
+    };
+    auto by_ratio_asc = [](const SizeOutlier& a, const SizeOutlier& b) {
+      return a.ratio < b.ratio;
+    };
+    std::sort(over.begin(), over.end(), by_ratio_desc);
+    std::sort(under.begin(), under.end(), by_ratio_asc);
+    const size_t kMaxOutliers = 5;
+    std::ostringstream over_line;
+    std::ostringstream under_line;
+    for (size_t i = 0; i < over.size() && i < kMaxOutliers; ++i) {
+      if (i > 0) {
+        over_line << ";";
+      }
+      over_line << "rtpts=" << over[i].rtp_ts
+                << " size=" << over[i].size_bytes
+                << " exp=" << over[i].expected_bytes
+                << " ratio=" << std::fixed << std::setprecision(2)
+                << over[i].ratio;
+    }
+    for (size_t i = 0; i < under.size() && i < kMaxOutliers; ++i) {
+      if (i > 0) {
+        under_line << ";";
+      }
+      under_line << "rtpts=" << under[i].rtp_ts
+                 << " size=" << under[i].size_bytes
+                 << " exp=" << under[i].expected_bytes
+                 << " ratio=" << std::fixed << std::setprecision(2)
+                 << under[i].ratio;
+    }
+    RTC_LOG(LS_INFO) << "ENCODER_FRAME_SIZE_OUTLIERS over="
+                     << (over_line.str().empty() ? "none" : over_line.str())
+                     << " under="
+                     << (under_line.str().empty() ? "none" : under_line.str());
+  }
 }
 
 FrameTimingInfo* FrameTimeWindow::FindFrameByTimestamp(uint32_t rtp_timestamp) {

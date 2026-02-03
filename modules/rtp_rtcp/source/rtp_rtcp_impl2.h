@@ -242,7 +242,11 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   void OnStallReport(
       const std::vector<RTCPReceiver::ModuleRtpRtcp::DecodeDelayInfo>& decode_delays,
       uint32_t stall_rtp_timestamp,
-      uint32_t stall_gap_ms) override;
+      uint32_t stall_gap_ms,
+      uint32_t stall_report_size_bytes) override;
+  void OnRtcpFeedbackReceived(
+      RTCPReceiver::ModuleRtpRtcp::RtcpFeedbackKind kind,
+      int64_t time_ms) override;
   void OnRequestSendReport() override;
 
   void SetVideoBitrateAllocation(

@@ -62,15 +62,62 @@ void StallDetector::OnFrameDecoded(uint32_t rtp_timestamp,
 
 std::vector<DecodeDelayInfo> StallDetector::GetRecentDecodeDelays(size_t count) const {
   std::vector<DecodeDelayInfo> delays;
-  delays.reserve(std::min(count, decode_history_.size()));
-  
-  size_t start_idx = decode_history_.size() > count ? decode_history_.size() - count : 0;
-  for (size_t i = start_idx; i < decode_history_.size(); ++i) {
+  const size_t history_size = decode_history_.size();
+  delays.reserve(std::min(count, history_size));
+
+  size_t start_idx = history_size > count ? history_size - count : 0;
+  if (history_size >= 2) {
+    std::vector<int64_t> gaps_us;
+    gaps_us.reserve(history_size - 1);
+    for (size_t i = 1; i < history_size; ++i) {
+      const int64_t gap = decode_history_[i].arrival_time_us -
+                          decode_history_[i - 1].arrival_time_us;
+      if (gap > 0) {
+        gaps_us.push_back(gap);
+      }
+    }
+    if (!gaps_us.empty()) {
+      std::nth_element(gaps_us.begin(),
+                       gaps_us.begin() + gaps_us.size() / 2,
+                       gaps_us.end());
+      const int64_t median_gap_us = gaps_us[gaps_us.size() / 2];
+      const int64_t threshold_us = std::max<int64_t>(
+          median_gap_us * 13 / 10, median_gap_us + 2000);
+      size_t stall_idx = history_size;
+      if (last_stall_rtp_timestamp_ != 0) {
+        for (size_t i = history_size; i-- > 0;) {
+          if (decode_history_[i].rtp_timestamp == last_stall_rtp_timestamp_) {
+            stall_idx = i;
+            break;
+          }
+        }
+      }
+      if (stall_idx < history_size && stall_idx > 0) {
+        size_t normal_idx = stall_idx;
+        while (normal_idx > 0) {
+          const int64_t gap = decode_history_[normal_idx].arrival_time_us -
+                              decode_history_[normal_idx - 1].arrival_time_us;
+          if (gap <= threshold_us) {
+            break;
+          }
+          --normal_idx;
+        }
+        constexpr size_t kLookbackFrames = 2;
+        const size_t adaptive_start =
+            (normal_idx > kLookbackFrames) ? (normal_idx - kLookbackFrames) : 0;
+        if (adaptive_start > start_idx) {
+          start_idx = adaptive_start;
+        }
+      }
+    }
+  }
+  for (size_t i = start_idx; i < history_size; ++i) {
     const auto& info = decode_history_[i];
     DecodeDelayInfo delay;
     delay.rtp_timestamp = info.rtp_timestamp;
     delay.decode_delay_us = info.decode_time_us;
     delay.assemble_to_decode_us = info.assemble_to_decode_us;
+    delay.decode_end_time_us = info.arrival_time_us;
     delays.push_back(delay);
   }
   

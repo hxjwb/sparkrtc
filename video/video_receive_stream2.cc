@@ -1101,7 +1101,9 @@ void VideoReceiveStream2::OnStallDetected(
     RTC_LOG(LS_INFO) << "Frame timestamp: " << delay_info.rtp_timestamp
                      << ", Decode delay: " << delay_info.decode_delay_us / 1000
                      << " ms, Assemble->Decode: "
-                     << delay_info.assemble_to_decode_us / 1000 << " ms";
+                     << delay_info.assemble_to_decode_us / 1000 << " ms"
+                     << ", Decode end: " << delay_info.decode_end_time_us / 1000
+                     << " ms";
   }
   
   // Directly construct and send RTCP APP packet
@@ -1117,7 +1119,7 @@ void VideoReceiveStream2::OnStallDetected(
   
   // Serialize version + stall timestamp + stall gap + decode delay information
   rtc::Buffer data_buffer;
-  uint32_t version_nbo = rtc::HostToNetwork32(2);
+  uint32_t version_nbo = rtc::HostToNetwork32(4);
   data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&version_nbo),
                          sizeof(version_nbo));
   uint32_t stall_timestamp_nbo = rtc::HostToNetwork32(stall_rtp_timestamp);
@@ -1127,21 +1129,37 @@ void VideoReceiveStream2::OnStallDetected(
       rtc::HostToNetwork32(static_cast<uint32_t>(stall_gap_ms));
   data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&stall_gap_nbo),
                          sizeof(stall_gap_nbo));
+  const size_t size_field_offset = data_buffer.size();
+  uint32_t size_placeholder = 0;
+  data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&size_placeholder),
+                         sizeof(size_placeholder));
   for (const auto& delay_info : decode_delays) {
     // Write frame timestamp (4 bytes, network byte order)
     uint32_t frame_timestamp = delay_info.rtp_timestamp;
     uint32_t frame_timestamp_nbo = rtc::HostToNetwork32(frame_timestamp);
-    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&frame_timestamp_nbo), sizeof(frame_timestamp_nbo));
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&frame_timestamp_nbo),
+                           sizeof(frame_timestamp_nbo));
     // Write decode delay in microseconds (8 bytes, network byte order)
     uint64_t decode_delay_us = delay_info.decode_delay_us;
     uint64_t decode_delay_us_nbo = rtc::HostToNetwork64(decode_delay_us);
-    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&decode_delay_us_nbo), sizeof(decode_delay_us_nbo));
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&decode_delay_us_nbo),
+                           sizeof(decode_delay_us_nbo));
     // Write assemble-to-decode delay in microseconds (8 bytes, network byte order)
     uint64_t assemble_to_decode_us = delay_info.assemble_to_decode_us;
     uint64_t assemble_to_decode_us_nbo = rtc::HostToNetwork64(assemble_to_decode_us);
     data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&assemble_to_decode_us_nbo),
                            sizeof(assemble_to_decode_us_nbo));
+    // Write decode end time in microseconds (8 bytes, network byte order)
+    uint64_t decode_end_time_us = delay_info.decode_end_time_us;
+    uint64_t decode_end_time_us_nbo = rtc::HostToNetwork64(decode_end_time_us);
+    data_buffer.AppendData(reinterpret_cast<const uint8_t*>(&decode_end_time_us_nbo),
+                           sizeof(decode_end_time_us_nbo));
   }
+  const uint32_t report_size_bytes =
+      static_cast<uint32_t>(data_buffer.size());
+  const uint32_t report_size_nbo = rtc::HostToNetwork32(report_size_bytes);
+  std::memcpy(data_buffer.data() + size_field_offset, &report_size_nbo,
+              sizeof(report_size_nbo));
   
   app_packet.SetData(data_buffer.data(), data_buffer.size());
   

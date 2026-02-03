@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/include/rtcp_statistics.h"
@@ -69,6 +70,7 @@ struct DecodeDelayInfo {
   uint32_t rtp_timestamp;
   int64_t decode_delay_us;
   int64_t assemble_to_decode_us;
+  int64_t decode_end_time_us;
 };
 
 class FrameTimeWindow {
@@ -108,10 +110,12 @@ class FrameTimeWindow {
   void AddBweTargetRate(int64_t time_ms, uint32_t bitrate_bps);
   void AddRtcpPacketTypeCounter(int64_t time_ms,
                                 const RtcpPacketTypeCounter& counter);
+  void AddRtcpFeedbackEvent(int64_t time_ms, absl::string_view kind);
   
   void PrintProfilingInfo(const std::vector<DecodeDelayInfo>& decode_delays,
                           uint32_t stall_rtp_timestamp,
                           int64_t stall_gap_ms,
+                          uint32_t stall_report_size_bytes,
                           uint32_t nack_sent,
                           TwccTimeCorrelator* twcc_correlator = nullptr);
 
@@ -129,11 +133,13 @@ class FrameTimeWindow {
       kEncoderTargetRate,
       kBweTargetRate,
       kRtcpSignal,
+      kRtcpFeedback,
     };
     int64_t time_ms = -1;
     Type type = Type::kEncoderTargetRate;
     uint32_t bitrate_bps = 0;
     RtcpPacketTypeCounter rtcp_counter;
+    std::string feedback_kind;
   };
 
   std::deque<ControlDigestEntry> control_digests_;

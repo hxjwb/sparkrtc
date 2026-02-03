@@ -36,10 +36,12 @@ and prints a timeline on the sender when a stall is detected.
 All values are network byte order:
 
 - `stall_rtp_timestamp` (4 bytes)
-- Repeated for each frame (20 bytes per entry):
+- `report_size_bytes` (4 bytes, version 4)
+- Repeated for each frame (28 bytes per entry):
   - `frame_rtp_timestamp` (4 bytes)
   - `decode_delay_us` (8 bytes)
   - `assemble_to_decode_us` (8 bytes)
+  - `decode_end_time_us` (8 bytes)
 
 ### Sender log format
 
