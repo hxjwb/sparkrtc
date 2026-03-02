@@ -51,12 +51,32 @@ class RTCPReceiver final {
  public:
   class ModuleRtpRtcp {
    public:
+    enum class RtcpFeedbackKind {
+      kTransportFeedback,
+      kReceiverReport,
+      kRtt,
+      kRemb,
+    };
     virtual void SetTmmbn(std::vector<rtcp::TmmbItem> bounding_set) = 0;
     virtual void OnRequestSendReport() = 0;
     virtual void OnReceivedNack(
         const std::vector<uint16_t>& nack_sequence_numbers) = 0;
     virtual void OnReceivedRtcpReportBlocks(
         rtc::ArrayView<const ReportBlockData> report_blocks) = 0;
+    
+    // Handle stall report
+    struct DecodeDelayInfo {
+      uint32_t rtp_timestamp;
+      uint64_t decode_delay_us;
+      uint64_t assemble_to_decode_us;
+      uint64_t decode_end_time_us;
+    };
+    virtual void OnStallReport(const std::vector<DecodeDelayInfo>& decode_delays,
+                               uint32_t stall_rtp_timestamp,
+                               uint32_t stall_gap_ms,
+                               uint32_t stall_report_size_bytes) = 0;
+    virtual void OnRtcpFeedbackReceived(RtcpFeedbackKind kind,
+                                        int64_t time_ms) = 0;
 
    protected:
     virtual ~ModuleRtpRtcp() = default;
@@ -108,6 +128,8 @@ class RTCPReceiver final {
 
   void SetRemoteSSRC(uint32_t ssrc);
   uint32_t RemoteSSRC() const;
+
+  RtcpPacketTypeCounter GetPacketTypeCounter() const;
 
   bool receiver_only() const { return receiver_only_; }
 

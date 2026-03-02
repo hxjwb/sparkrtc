@@ -40,10 +40,12 @@
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
+#include "video/frame_time_window.h"
 
 namespace webrtc {
 
 class FrameEncryptorInterface;
+class Clock;
 class RtpTransportControllerSendInterface;
 
 namespace webrtc_internal_rtp_video_sender {
@@ -147,6 +149,9 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   uint32_t GetProtectionBitrateBps() const RTC_LOCKS_EXCLUDED(mutex_) override;
   void SetEncodingData(size_t width, size_t height, size_t num_temporal_layers)
       RTC_LOCKS_EXCLUDED(mutex_) override;
+  FrameTimeWindow* GetFrameTimeWindow() override {
+    return &frame_time_window_;
+  }
 
   std::vector<RtpSequenceNumberMap::Info> GetSentRtpPacketInfos(
       uint32_t ssrc,
@@ -175,6 +180,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   const FieldTrialsView& field_trials_;
   const bool use_frame_rate_for_overhead_;
   const bool has_packet_feedback_;
+  Clock* const clock_;
 
   // Semantically equivalent to checking for `transport_->GetWorkerQueue()`
   // but some tests need to be updated to call from the correct context.
@@ -211,6 +217,9 @@ class RtpVideoSender : public RtpVideoSenderInterface,
 
   std::vector<FrameCounts> frame_counts_ RTC_GUARDED_BY(mutex_);
   FrameCountObserver* const frame_count_observer_;
+
+  // Frame time window for tracking encoding times and packet send times
+  FrameTimeWindow frame_time_window_;
 
   // Effectively const map from SSRC to RtpRtcp, for all media SSRCs.
   // This map is set at construction time and never changed, but it's

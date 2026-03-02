@@ -37,6 +37,7 @@
 #include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
+class FrameTimeWindow;
 
 class SendStatisticsProxy : public VideoStreamEncoderObserver,
                             public ReportBlockDataObserver,
@@ -98,6 +99,7 @@ class SendStatisticsProxy : public VideoStreamEncoderObserver,
 
   // Used to update the encoder target rate.
   void OnSetEncoderTargetRate(uint32_t bitrate_bps);
+  void SetFrameTimeWindow(FrameTimeWindow* frame_time_window);
 
   // Implements CpuOveruseMetricsObserver.
   void OnEncodedFrameTimeMeasured(int encode_time_ms,
@@ -289,6 +291,10 @@ class SendStatisticsProxy : public VideoStreamEncoderObserver,
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Clock* const clock_;
+  FrameTimeWindow* frame_time_window_ = nullptr;
+  int64_t last_rtcp_log_ms_ = -1;
+  RtcpPacketTypeCounter last_rtcp_log_counter_;
+  bool has_last_rtcp_log_counter_ = false;
   const std::string payload_name_;
   const RtpConfig rtp_config_;
   const absl::optional<int> fallback_max_pixels_;

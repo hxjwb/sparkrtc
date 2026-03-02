@@ -162,6 +162,9 @@ struct PacketResult {
 
   SentPacket sent_packet;
   Timestamp receive_time = Timestamp::PlusInfinity();
+  
+  // RTP timestamp for this packet (if available)
+  absl::optional<uint32_t> rtp_timestamp;
 };
 
 struct TransportPacketsFeedback {

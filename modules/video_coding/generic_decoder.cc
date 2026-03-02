@@ -44,10 +44,10 @@ int frame_size;
 VCMDecodedFrameCallback::VCMDecodedFrameCallback(
     VCMTiming* timing,
     Clock* clock,
-    const FieldTrialsView& field_trials)
-    : _clock(clock), _timing(timing) {
-  ntp_offset_ =
-      _clock->CurrentNtpInMilliseconds() - _clock->TimeInMilliseconds();
+    const FieldTrialsView& field_trials,
+    StallDetectorObserver* stall_observer)
+    : _clock(clock), _timing(timing), stall_observer_(stall_observer), stall_detector_(stall_observer ? stall_observer : this) {
+  ntp_offset_ = _clock->CurrentNtpInMilliseconds() - _clock->TimeInMilliseconds();
 }
 
 VCMDecodedFrameCallback::~VCMDecodedFrameCallback() {}
@@ -229,6 +229,18 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
       timing_frame_info.decode_finish_ms - timing_frame_info.decode_start_ms);
   _timing->SetTimingFrameInfo(timing_frame_info);
 
+  // Calculate decode delay and notify stall detector
+  int64_t decode_delay_us =
+      (timing_frame_info.decode_finish_ms - timing_frame_info.decode_start_ms) *
+      1000;
+  int64_t assemble_to_decode_us =
+      std::max<int64_t>(
+          0, timing_frame_info.decode_start_ms -
+                 timing_frame_info.receive_finish_ms) *
+      1000;
+  stall_detector_.OnFrameDecoded(decodedImage.timestamp(), decode_delay_us,
+                                 assemble_to_decode_us);
+
   decodedImage.set_timestamp_us(
       frame_info->render_time ? frame_info->render_time->us() : -1);
   _receiveCallback->FrameToRender(decodedImage, qp, decode_time,
@@ -267,6 +279,20 @@ void VCMDecodedFrameCallback::ClearTimestampMap() {
   }
   if (dropped_frames > 0) {
     _receiveCallback->OnDroppedFrames(dropped_frames);
+  }
+}
+
+void VCMDecodedFrameCallback::OnStallDetected(
+    const std::vector<DecodeDelayInfo>& decode_delays,
+    uint32_t stall_rtp_timestamp,
+    int64_t stall_gap_ms) {
+  RTC_LOG(LS_INFO) << "Stall detected, sending profiling data for "
+                   << decode_delays.size() << " frames, stall rtp timestamp "
+                   << stall_rtp_timestamp << ", stall gap " << stall_gap_ms
+                   << " ms";
+  if (stall_observer_ && stall_observer_ != this) {
+    stall_observer_->OnStallDetected(decode_delays, stall_rtp_timestamp,
+                                     stall_gap_ms);
   }
 }
 

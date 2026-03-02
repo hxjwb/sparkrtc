@@ -47,6 +47,7 @@ class Transport;
 class PacketRouter;
 class RtpVideoSenderInterface;
 class RtpPacketSender;
+class TwccTimeCorrelator;
 
 struct RtpSenderObservers {
   RtcpRttStats* rtcp_rtt_stats;
@@ -112,6 +113,7 @@ class RtpTransportControllerSendInterface {
   virtual TransportFeedbackObserver* transport_feedback_observer() = 0;
 
   virtual RtpPacketSender* packet_sender() = 0;
+  virtual TwccTimeCorrelator* GetTwccTimeCorrelator() = 0;
 
   // SetAllocatedSendBitrateLimits sets bitrates limits imposed by send codec
   // settings.

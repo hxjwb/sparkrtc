@@ -194,6 +194,7 @@ VideoSendStream::VideoSendStream(
                    encoder_config.content_type,
                    rtp_video_sender_,
                    field_trials) {
+  stats_proxy_.SetFrameTimeWindow(rtp_video_sender_->GetFrameTimeWindow());
   RTC_DCHECK(config_.encoder_settings.encoder_factory);
   RTC_DCHECK(config_.encoder_settings.bitrate_allocator_factory);
 

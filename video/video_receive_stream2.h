@@ -40,6 +40,7 @@
 #include "video/transport_adapter.h"
 #include "video/video_stream_buffer_controller.h"
 #include "video/video_stream_decoder2.h"
+#include "video/stall_detector.h"
 
 namespace webrtc {
 
@@ -88,7 +89,8 @@ class VideoReceiveStream2
       public RtpVideoStreamReceiver2::OnCompleteFrameCallback,
       public Syncable,
       public CallStatsObserver,
-      public FrameSchedulingReceiver {
+      public FrameSchedulingReceiver,
+      public StallDetectorObserver {
  public:
   // The maximum number of buffered encoded frames when encoded output is
   // configured.
@@ -197,6 +199,11 @@ class VideoReceiveStream2
   void GenerateKeyFrame() override;
 
   void UpdateRtxSsrc(uint32_t ssrc) override;
+
+  // Implements StallDetectorObserver.
+  void OnStallDetected(const std::vector<DecodeDelayInfo>& decode_delays,
+                       uint32_t stall_rtp_timestamp,
+                       int64_t stall_gap_ms) override;
 
  private:
   // FrameSchedulingReceiver implementation.

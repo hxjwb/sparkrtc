@@ -17,8 +17,13 @@
 
 #include "absl/strings/match.h"
 #include "api/units/timestamp.h"
+#include "api/scoped_refptr.h"
 #include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
+#include "modules/rtp_rtcp/source/flexfec_header_reader_writer.h"
+#include "modules/rtp_rtcp/source/forward_error_correction.h"
+#include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/time_utils.h"
 namespace webrtc {
 namespace {
@@ -26,6 +31,64 @@ constexpr uint32_t kTimestampTicksPerMs = 90;
 constexpr TimeDelta kBitrateStatisticsWindow = TimeDelta::Seconds(1);
 constexpr size_t kRtpSequenceNumberMapMaxEntries = 1 << 13;
 constexpr TimeDelta kUpdateInterval = kBitrateStatisticsWindow;
+
+std::vector<uint16_t> ExtractProtectedSeqsFromFecPayload(
+    rtc::ArrayView<const uint8_t> payload,
+    uint32_t ssrc,
+    rtc::ArrayView<const uint32_t> csrcs,
+    bool is_flexfec) {
+  std::vector<uint16_t> protected_seqs;
+  if (payload.empty()) {
+    return protected_seqs;
+  }
+  auto fec_packet = std::make_unique<ForwardErrorCorrection::ReceivedFecPacket>();
+  fec_packet->ssrc = ssrc;
+  fec_packet->seq_num = 0;
+  fec_packet->pkt = rtc::scoped_refptr<ForwardErrorCorrection::Packet>(
+      new ForwardErrorCorrection::Packet());
+  fec_packet->pkt->data.SetData(payload.data(), payload.size());
+
+  bool parsed = false;
+  if (is_flexfec) {
+    for (uint32_t csrc : csrcs) {
+      ForwardErrorCorrection::ProtectedStream stream;
+      stream.ssrc = csrc;
+      fec_packet->protected_streams.push_back(stream);
+    }
+    FlexfecHeaderReader reader;
+    parsed = reader.ReadFecHeader(fec_packet.get());
+  } else {
+    UlpfecHeaderReader reader;
+    parsed = reader.ReadFecHeader(fec_packet.get());
+    if (!parsed && payload.size() > 1) {
+      fec_packet->pkt->data.SetData(payload.data() + 1, payload.size() - 1);
+      parsed = reader.ReadFecHeader(fec_packet.get());
+    }
+  }
+
+  if (!parsed || fec_packet->protected_streams.empty()) {
+    return protected_seqs;
+  }
+
+  for (const auto& stream : fec_packet->protected_streams) {
+    if (stream.packet_mask_offset + stream.packet_mask_size >
+        fec_packet->pkt->data.size()) {
+      continue;
+    }
+    for (uint16_t byte_idx = 0; byte_idx < stream.packet_mask_size; ++byte_idx) {
+      uint8_t packet_mask =
+          fec_packet->pkt->data[stream.packet_mask_offset + byte_idx];
+      for (uint16_t bit_idx = 0; bit_idx < 8; ++bit_idx) {
+        if (packet_mask & (1 << (7 - bit_idx))) {
+          protected_seqs.push_back(static_cast<uint16_t>(
+              stream.seq_num_base + (byte_idx << 3) + bit_idx));
+        }
+      }
+    }
+  }
+
+  return protected_seqs;
+}
 }  // namespace
 
 RtpSenderEgress::NonPacedPacketSender::NonPacedPacketSender(
@@ -98,6 +161,7 @@ RtpSenderEgress::RtpSenderEgress(const RtpRtcpInterface::Configuration& config,
       send_packet_observer_(config.send_packet_observer),
       rtp_stats_callback_(config.rtp_stats_callback),
       bitrate_callback_(config.send_bitrate_observer),
+      frame_time_window_(config.frame_time_window),
       media_has_been_sent_(false),
       force_part_of_allocation_(false),
       timestamp_offset_(0),
@@ -151,6 +215,34 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
 #if BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
   BweTestLoggingPlot(now, packet->Ssrc());
 #endif
+
+  // Record packet send time if frame time window is available.
+  if (frame_time_window_ && packet->packet_type().has_value()) {
+    const RtpPacketMediaType packet_type = *packet->packet_type();
+    const int64_t send_time_ms = now.ms();
+    uint16_t transport_sequence_number = 0;
+    packet->GetExtension<TransportSequenceNumber>(&transport_sequence_number);
+    if (packet_type == RtpPacketMediaType::kVideo) {
+      frame_time_window_->AddMediaPacket(packet->Timestamp(),
+                                         packet->SequenceNumber(),
+                                         transport_sequence_number, send_time_ms,
+                                         packet->size());
+    } else if (packet_type == RtpPacketMediaType::kRetransmission) {
+      frame_time_window_->AddRetransPacket(
+          packet->Timestamp(), packet->SequenceNumber(),
+          transport_sequence_number, send_time_ms, packet->size(),
+          packet->retransmitted_sequence_number());
+    } else if (packet_type == RtpPacketMediaType::kForwardErrorCorrection) {
+      const bool is_flexfec =
+          flexfec_ssrc_.has_value() && packet->Ssrc() == *flexfec_ssrc_;
+      std::vector<uint16_t> protected_seqs =
+          ExtractProtectedSeqsFromFecPayload(packet->payload(), packet->Ssrc(),
+                                             packet->Csrcs(), is_flexfec);
+      frame_time_window_->AddFecPacket(packet->SequenceNumber(),
+                                       transport_sequence_number, send_time_ms,
+                                       packet->size(), protected_seqs);
+    }
+  }
   if (need_rtp_packet_infos_ &&
       packet->packet_type() == RtpPacketToSend::Type::kVideo) {
     // Last packet of a frame, add it to sequence number info map.
@@ -217,24 +309,6 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
       packet->set_pacer_exit_time(now);
     }
   }
-  // get the first 20 bytes of packet payload
-  const uint8_t* payload = packet->payload().data();
-  // get the first 10 bytes of the payload for logging
-  rtc::StringBuilder payload_builder;
-  // payload_builder << "0x";
-  for (size_t i = 0; i < std::min<size_t>(10, packet->payload().size());
-       ++i) {
-    payload_builder.AppendFormat("%02x", payload[i]);
-  }
-  std::string payload_str = payload_builder.Release();
-  
-  uint16_t original_sequence_number =
-      packet->retransmitted_sequence_number().value_or(packet->SequenceNumber());
-  
-  RTC_LOG(LS_INFO) << "Prfl_pkt_send@" << packet->Timestamp() << " "
-                   << packet->SequenceNumber() << " " << packet->packet_type().value_or(RtpPacketMediaType::kAudio) << " "
-                   << payload_str << " " << packet->size() << " " << original_sequence_number;
-
   auto compound_packet = Packet{std::move(packet), pacing_info, now};
   if (enable_send_packet_batching_ && !is_audio_) {
     packets_to_send_.push_back(std::move(compound_packet));
@@ -284,6 +358,41 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
   }
   options.batchable = enable_send_packet_batching_ && !is_audio_;
   options.last_packet_in_batch = last_in_batch;
+  int prfl_packet_type = 5;
+  if (packet->packet_type().has_value()) {
+    switch (*packet->packet_type()) {
+      case RtpPacketMediaType::kAudio:
+      case RtpPacketMediaType::kVideo:
+        prfl_packet_type = 1;
+        break;
+      case RtpPacketMediaType::kRetransmission:
+        prfl_packet_type = 2;
+        break;
+      case RtpPacketMediaType::kForwardErrorCorrection:
+        prfl_packet_type = 3;
+        break;
+      case RtpPacketMediaType::kPadding:
+        prfl_packet_type = 4;
+        break;
+    }
+  }
+  uint16_t original_seq = packet->SequenceNumber();
+  if (packet->packet_type() == RtpPacketMediaType::kRetransmission &&
+      packet->retransmitted_sequence_number().has_value()) {
+    original_seq = *packet->retransmitted_sequence_number();
+  }
+  size_t payload_head_len = std::min<size_t>(10, packet->payload_size());
+  std::string payload_head = "0";
+  if (payload_head_len > 0) {
+    auto payload = packet->payload();
+    absl::string_view payload_view(
+        reinterpret_cast<const char*>(payload.data()), payload_head_len);
+    payload_head = rtc::hex_encode(payload_view);
+  }
+  RTC_LOG(LS_INFO) << "Prfl_pkt_send@" << packet->Timestamp() << " "
+                   << packet->SequenceNumber() << " " << prfl_packet_type
+                   << " " << payload_head << " " << packet->size() << " "
+                   << original_seq;
   const bool send_success = SendPacketToNetwork(*packet, options, pacing_info);
 
   // Put packet in retransmission history or update pending status even if

@@ -23,6 +23,7 @@
 #include "modules/video_coding/encoded_frame.h"
 #include "modules/video_coding/timing/timing.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "video/stall_detector.h"
 
 namespace webrtc {
 
@@ -50,11 +51,11 @@ struct FrameInfo {
   VideoFrameType frame_type;
 };
 
-class VCMDecodedFrameCallback : public DecodedImageCallback {
+class VCMDecodedFrameCallback : public DecodedImageCallback, public StallDetectorObserver {
  public:
-  VCMDecodedFrameCallback(VCMTiming* timing,
-                          Clock* clock,
-                          const FieldTrialsView& field_trials);
+  VCMDecodedFrameCallback(VCMTiming* timing, Clock* clock,
+                          const FieldTrialsView& field_trials,
+                          StallDetectorObserver* stall_observer = nullptr);
   ~VCMDecodedFrameCallback() override;
   void SetUserReceiveCallback(VCMReceiveCallback* receiveCallback);
   VCMReceiveCallback* UserReceiveCallback();
@@ -69,6 +70,11 @@ class VCMDecodedFrameCallback : public DecodedImageCallback {
 
   void Map(FrameInfo frameInfo);
   void ClearTimestampMap();
+
+  // StallDetectorObserver implementation
+  void OnStallDetected(const std::vector<DecodeDelayInfo>& decode_delays,
+                       uint32_t stall_rtp_timestamp,
+                       int64_t stall_gap_ms) override;
 
  private:
   std::pair<absl::optional<FrameInfo>, size_t> FindFrameInfo(
@@ -86,6 +92,8 @@ class VCMDecodedFrameCallback : public DecodedImageCallback {
   Mutex lock_;
   std::deque<FrameInfo> frame_infos_ RTC_GUARDED_BY(lock_);
   int64_t ntp_offset_;
+  StallDetectorObserver* stall_observer_ [[maybe_unused]];
+  StallDetector stall_detector_;
 };
 
 class VCMGenericDecoder {

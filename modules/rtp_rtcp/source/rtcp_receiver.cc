@@ -135,6 +135,18 @@ struct RTCPReceiver::PacketInformation {
   absl::optional<VideoBitrateAllocation> target_bitrate_allocation;
   absl::optional<NetworkStateEstimate> network_state_estimate;
   std::unique_ptr<rtcp::LossNotification> loss_notification;
+  
+  // Stall report data
+  struct DecodeDelayInfo {
+    uint32_t rtp_timestamp;
+    uint64_t decode_delay_us;
+    uint64_t assemble_to_decode_us;
+    uint64_t decode_end_time_us;
+  };
+  std::vector<DecodeDelayInfo> stall_report;
+  uint32_t stall_rtp_timestamp = 0;
+  uint32_t stall_gap_ms = 0;
+  uint32_t stall_report_size_bytes = 0;
 };
 
 RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
@@ -243,6 +255,11 @@ uint32_t RTCPReceiver::local_media_ssrc() const {
 uint32_t RTCPReceiver::RemoteSSRC() const {
   MutexLock lock(&rtcp_receiver_lock_);
   return remote_ssrc_;
+}
+
+RtcpPacketTypeCounter RTCPReceiver::GetPacketTypeCounter() const {
+  MutexLock lock(&rtcp_receiver_lock_);
+  return packet_type_counter_;
 }
 
 void RTCPReceiver::RttStats::AddRtt(TimeDelta rtt) {
@@ -783,6 +800,106 @@ bool RTCPReceiver::HandleApp(const rtcp::CommonHeader& rtcp_block,
     // RemoteEstimate is not a standard RTCP message. Failing to parse it
     // doesn't indicates RTCP packet is invalid. It may indicate sender happens
     // to use the same id for a different message. Thus don't return false.
+  } else if (app.name() == rtcp::App::NameToInt("STLL") && app.sub_type() == 1) {
+    // Handle stall report APP packet
+    const uint8_t* data = app.data();
+    size_t data_size = app.data_size();
+    size_t offset = 0;
+
+    RTC_LOG(LS_INFO) << "Received stall report APP packet with " << data_size
+                     << " bytes of data";
+    if (data_size < 4) {
+      return true;
+    }
+    uint32_t header0 = (data[offset] << 24) | (data[offset + 1] << 16) |
+                       (data[offset + 2] << 8) | data[offset + 3];
+    uint32_t stall_rtp_timestamp = 0;
+    uint32_t stall_gap_ms = 0;
+    uint32_t version = 0;
+    uint32_t report_size_bytes = 0;
+    if ((header0 == 2 || header0 == 3 || header0 == 4) && data_size >= 12) {
+      version = header0;
+      stall_rtp_timestamp =
+          (data[offset + 4] << 24) | (data[offset + 5] << 16) |
+          (data[offset + 6] << 8) | data[offset + 7];
+      stall_gap_ms =
+          (data[offset + 8] << 24) | (data[offset + 9] << 16) |
+          (data[offset + 10] << 8) | data[offset + 11];
+      offset += 12;
+      if (version == 4 && data_size >= 16) {
+        report_size_bytes =
+            (data[offset] << 24) | (data[offset + 1] << 16) |
+            (data[offset + 2] << 8) | data[offset + 3];
+        offset += 4;
+      }
+    } else {
+      stall_rtp_timestamp = header0;
+      stall_gap_ms = 0;
+      offset += 4;
+    }
+    packet_information->stall_rtp_timestamp = stall_rtp_timestamp;
+    packet_information->stall_gap_ms = stall_gap_ms;
+    packet_information->stall_report_size_bytes =
+        report_size_bytes > 0 ? report_size_bytes
+                              : static_cast<uint32_t>(data_size);
+    RTC_LOG(LS_INFO) << "Stall report: stall rtp timestamp "
+                     << stall_rtp_timestamp << ", gap " << stall_gap_ms << " ms";
+    RTC_LOG(LS_INFO) << "PRFL_STALL rtp_ts=" << stall_rtp_timestamp
+                     << " stall_gap_ms=" << stall_gap_ms;
+
+    // Parse decode delay information
+    const size_t entry_size = (version >= 3) ? 28 : 20;
+    while (offset + entry_size <= data_size) {
+      uint32_t frame_timestamp =
+          (data[offset] << 24) | (data[offset + 1] << 16) |
+          (data[offset + 2] << 8) | data[offset + 3];
+      uint64_t decode_delay_us =
+          ((uint64_t)data[offset + 4] << 56) |
+          ((uint64_t)data[offset + 5] << 48) |
+          ((uint64_t)data[offset + 6] << 40) |
+          ((uint64_t)data[offset + 7] << 32) |
+          ((uint64_t)data[offset + 8] << 24) |
+          ((uint64_t)data[offset + 9] << 16) |
+          ((uint64_t)data[offset + 10] << 8) |
+          (uint64_t)data[offset + 11];
+      uint64_t assemble_to_decode_us =
+          ((uint64_t)data[offset + 12] << 56) |
+          ((uint64_t)data[offset + 13] << 48) |
+          ((uint64_t)data[offset + 14] << 40) |
+          ((uint64_t)data[offset + 15] << 32) |
+          ((uint64_t)data[offset + 16] << 24) |
+          ((uint64_t)data[offset + 17] << 16) |
+          ((uint64_t)data[offset + 18] << 8) |
+          (uint64_t)data[offset + 19];
+      uint64_t decode_end_time_us = 0;
+      if (version == 3) {
+        decode_end_time_us =
+            ((uint64_t)data[offset + 20] << 56) |
+            ((uint64_t)data[offset + 21] << 48) |
+            ((uint64_t)data[offset + 22] << 40) |
+            ((uint64_t)data[offset + 23] << 32) |
+            ((uint64_t)data[offset + 24] << 24) |
+            ((uint64_t)data[offset + 25] << 16) |
+            ((uint64_t)data[offset + 26] << 8) |
+            (uint64_t)data[offset + 27];
+      }
+
+      RTC_LOG(LS_INFO) << "Stall report: Frame timestamp " << frame_timestamp
+                       << ", Decode delay " << decode_delay_us / 1000
+                       << " ms, Assemble->Decode "
+                       << assemble_to_decode_us / 1000 << " ms"
+                       << ", Decode end " << decode_end_time_us / 1000 << " ms";
+
+      // Add to stall report
+      PacketInformation::DecodeDelayInfo delay_info;
+      delay_info.rtp_timestamp = frame_timestamp;
+      delay_info.decode_delay_us = decode_delay_us;
+      delay_info.assemble_to_decode_us = assemble_to_decode_us;
+      delay_info.decode_end_time_us = decode_end_time_us;
+      packet_information->stall_report.push_back(delay_info);
+
+      offset += entry_size;
+    }
   }
 
   return true;
@@ -1166,6 +1283,26 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
     }
   }
 
+  if (rtp_rtcp_) {
+    const int64_t now_ms = clock_->TimeInMilliseconds();
+    if (packet_information.transport_feedback != nullptr) {
+      rtp_rtcp_->OnRtcpFeedbackReceived(
+          ModuleRtpRtcp::RtcpFeedbackKind::kTransportFeedback, now_ms);
+    }
+    if (packet_information.packet_type_flags & kRtcpRemb) {
+      rtp_rtcp_->OnRtcpFeedbackReceived(
+          ModuleRtpRtcp::RtcpFeedbackKind::kRemb, now_ms);
+    }
+    if (!packet_information.report_block_datas.empty()) {
+      rtp_rtcp_->OnRtcpFeedbackReceived(
+          ModuleRtpRtcp::RtcpFeedbackKind::kReceiverReport, now_ms);
+    }
+    if (packet_information.rtt.has_value()) {
+      rtp_rtcp_->OnRtcpFeedbackReceived(
+          ModuleRtpRtcp::RtcpFeedbackKind::kRtt, now_ms);
+    }
+  }
+
   if ((packet_information.packet_type_flags & kRtcpSr) ||
       (packet_information.packet_type_flags & kRtcpRr)) {
     rtp_rtcp_->OnReceivedRtcpReportBlocks(
@@ -1182,6 +1319,27 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
       packet_information.target_bitrate_allocation) {
     bitrate_allocation_observer_->OnBitrateAllocationUpdated(
         *packet_information.target_bitrate_allocation);
+  }
+
+  // Handle stall report
+  if (!packet_information.stall_report.empty()) {
+    // Pass stall report to owner
+    if (rtp_rtcp_) {
+      // Convert DecodeDelayInfo from PacketInformation to ModuleRtpRtcp format
+      std::vector<ModuleRtpRtcp::DecodeDelayInfo> module_delays;
+      for (const auto& delay_info : packet_information.stall_report) {
+        ModuleRtpRtcp::DecodeDelayInfo info;
+        info.rtp_timestamp = delay_info.rtp_timestamp;
+        info.decode_delay_us = delay_info.decode_delay_us;
+        info.assemble_to_decode_us = delay_info.assemble_to_decode_us;
+        info.decode_end_time_us = delay_info.decode_end_time_us;
+        module_delays.push_back(info);
+      }
+      rtp_rtcp_->OnStallReport(module_delays,
+                               packet_information.stall_rtp_timestamp,
+                               packet_information.stall_gap_ms,
+                               packet_information.stall_report_size_bytes);
+    }
   }
 
   if (!receiver_only_) {

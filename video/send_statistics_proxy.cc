@@ -26,6 +26,7 @@
 #include "rtc_base/numerics/mod_ops.h"
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/metrics.h"
+#include "video/frame_time_window.h"
 
 namespace webrtc {
 namespace {
@@ -35,6 +36,7 @@ const int64_t kMaxEncodedFrameWindowMs = 800;
 const uint32_t kMaxEncodedFrameTimestampDiff = 900000;  // 10 sec.
 const int64_t kBucketSizeMs = 100;
 const size_t kBucketCount = 10;
+const int64_t kMinRtcpLogIntervalMs = 50;
 
 const char kVp8ForcedFallbackEncoderFieldTrial[] =
     "WebRTC-VP8-Forced-Fallback-Encoder-v2";
@@ -129,6 +131,13 @@ absl::optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled(
   return (absl::StartsWith(group, "Disabled"))
              ? GetFallbackMaxPixels(group.substr(8))
              : absl::optional<int>();
+}
+
+bool SameRtcpCounter(const RtcpPacketTypeCounter& a,
+                     const RtcpPacketTypeCounter& b) {
+  return a.nack_packets == b.nack_packets && a.fir_packets == b.fir_packets &&
+         a.pli_packets == b.pli_packets && a.nack_requests == b.nack_requests &&
+         a.unique_nack_requests == b.unique_nack_requests;
 }
 }  // namespace
 
@@ -1303,6 +1312,28 @@ void SendStatisticsProxy::RtcpPacketTypesCounterUpdated(
   stats->rtcp_packet_type_counts = packet_counter;
   if (uma_container_->first_rtcp_stats_time_ms_ == -1)
     uma_container_->first_rtcp_stats_time_ms_ = clock_->TimeInMilliseconds();
+
+  if (frame_time_window_) {
+    const int64_t now_ms = clock_->TimeInMilliseconds();
+    if (last_rtcp_log_ms_ >= 0 &&
+        (now_ms - last_rtcp_log_ms_) < kMinRtcpLogIntervalMs) {
+      return;
+    }
+    if (has_last_rtcp_log_counter_ &&
+        SameRtcpCounter(packet_counter, last_rtcp_log_counter_)) {
+      return;
+    }
+    last_rtcp_log_ms_ = now_ms;
+    last_rtcp_log_counter_ = packet_counter;
+    has_last_rtcp_log_counter_ = true;
+    frame_time_window_->AddRtcpPacketTypeCounter(now_ms, packet_counter);
+  }
+}
+
+void SendStatisticsProxy::SetFrameTimeWindow(
+    FrameTimeWindow* frame_time_window) {
+  MutexLock lock(&mutex_);
+  frame_time_window_ = frame_time_window;
 }
 
 void SendStatisticsProxy::OnReportBlockDataUpdated(

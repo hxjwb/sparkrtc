@@ -37,6 +37,7 @@
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/thread_annotations.h"
+#include "video/frame_time_window.h"
 
 namespace webrtc {
 
@@ -102,6 +103,11 @@ class RtpSenderEgress {
   void OnAbortedRetransmissions(
       rtc::ArrayView<const uint16_t> sequence_numbers);
 
+  // Get FrameTimeWindow
+  FrameTimeWindow* GetFrameTimeWindow() const {
+    return frame_time_window_;
+  }
+
  private:
   struct Packet {
     std::unique_ptr<RtpPacketToSend> rtp_packet;
@@ -150,6 +156,7 @@ class RtpSenderEgress {
   SendPacketObserver* const send_packet_observer_;
   StreamDataCountersCallback* const rtp_stats_callback_;
   BitrateStatisticsObserver* const bitrate_callback_;
+  FrameTimeWindow* const frame_time_window_;
 
   bool media_has_been_sent_ RTC_GUARDED_BY(worker_queue_);
   bool force_part_of_allocation_ RTC_GUARDED_BY(worker_queue_);
