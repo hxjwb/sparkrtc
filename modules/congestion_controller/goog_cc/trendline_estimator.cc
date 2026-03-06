@@ -112,7 +112,7 @@ absl::optional<double> ComputeSlopeCap(
 }
 
 constexpr double kMaxAdaptOffsetMs = 15.0;
-constexpr double kOverUsingTimeThreshold = 10;
+constexpr double kOverUsingTimeThreshold = 15;
 constexpr int kMinNumDeltas = 60;
 constexpr int kDeltaCounterMax = 1000;
 
@@ -179,7 +179,7 @@ TrendlineEstimator::TrendlineEstimator(
       k_up_(0.0087),
       k_down_(0.039),
       overusing_time_threshold_(kOverUsingTimeThreshold),
-      threshold_(12.5),
+      threshold_(15.0),
       prev_modified_trend_(NAN),
       last_update_ms_(-1),
       prev_trend_(0.0),
