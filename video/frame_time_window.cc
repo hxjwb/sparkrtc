@@ -1269,7 +1269,7 @@ void FrameTimeWindow::PrintProfilingInfo(
 
   RTC_LOG(LS_INFO) << "[event_context]";
   RTC_LOG(LS_INFO) << "codec=" << report_header_.codec
-                   << " resolution=" << report_header_.width << "x"
+                   << " resolutionn=" << report_header_.width << "x"
                    << report_header_.height
                    << " fps_nominal=" << report_header_.fps_nominal
                    << " rtx_enabled=" << (report_header_.rtx_enabled ? 1 : 0)
