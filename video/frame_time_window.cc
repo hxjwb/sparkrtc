@@ -1327,10 +1327,6 @@ void FrameTimeWindow::PrintProfilingInfo(
         }
       }
     }
-    const bool has_transport_base = !frame_packets.empty();
-    const uint16_t base_transport_seq =
-        has_transport_base ? frame_packets.front()->transport_sequence_number
-                           : 0;
     for (const auto* packet : frame_packets) {
       const int64_t send_delta =
           (base_send_ms >= 0 && packet->send_time_ms >= 0)
@@ -1340,16 +1336,14 @@ void FrameTimeWindow::PrintProfilingInfo(
           (base_recv_ms >= 0 && packet->recv_time_ms >= 0)
               ? (packet->recv_time_ms - base_recv_ms)
               : -1;
-      const int trans_delta =
-          has_transport_base
-              ? static_cast<uint16_t>(packet->transport_sequence_number -
-                                      base_transport_seq)
-              : -1;
+      const std::string send_label =
+          (send_delta >= 0) ? std::to_string(send_delta) : "None";
+      const std::string recv_label =
+          (recv_delta >= 0) ? std::to_string(recv_delta) : "None";
       RTC_LOG(LS_INFO) << "P: seq " << packet->rtp_sequence_number
                        << ", size " << packet->size_bytes
-                       << ", send_delta " << send_delta
-                       << ", trans_delta " << trans_delta
-                       << ", recv_delta " << recv_delta;
+                       << ", send_delta " << send_label
+                       << ", recv_delta " << recv_label;
     }
   }
   RTC_LOG(LS_INFO) << "";
