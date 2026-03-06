@@ -740,7 +740,7 @@ void PacingController::SetQueueTimeLimit(TimeDelta limit) {
 }
 
 void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
-  adjusted_media_rate_ = pacing_rate_;
+  adjusted_media_rate_ = pacing_rate_ * 2;
   if (!drain_large_queues_) {
     return;
   }

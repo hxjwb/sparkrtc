@@ -21,6 +21,7 @@
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
@@ -159,6 +160,11 @@ void UlpfecGenerator::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
     fec_->EncodeFec(media_packets_, params.fec_rate, kNumImportantPackets,
                     kUseUnequalProtection, params.fec_mask_type,
                     &generated_fec_packets_);
+    if (!generated_fec_packets_.empty()) {
+      RTC_LOG(LS_INFO) << "FEC generated with " << media_packets_.size()
+                       << " media packets, producing "
+                       << generated_fec_packets_.size() << " FEC packets.";
+    }
     if (generated_fec_packets_.empty()) {
       ResetState();
     }

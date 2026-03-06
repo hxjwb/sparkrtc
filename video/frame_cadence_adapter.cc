@@ -32,6 +32,7 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_utils/repeating_task.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
@@ -41,6 +42,11 @@
 
 namespace webrtc {
 namespace {
+
+constexpr bool kAccountForEncodeSequenceContention = true;
+constexpr bool kSimulateEncodeQueueContention = false;
+constexpr int kSimulatedEncodeQueueBlockMs = 85;
+constexpr int kSimulatedEncodeQueueBlockEveryNFrames = 5;
 
 // Abstracts concrete modes of the cadence adapter.
 class AdapterMode {
@@ -358,6 +364,9 @@ void ZeroHertzAdapterMode::OnFrame(Timestamp post_time,
                                    const VideoFrame& frame) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   TRACE_EVENT0("webrtc", "ZeroHertzAdapterMode::OnFrame");
+  RTC_LOG(LS_INFO) << "ZeroHertzAdapterMode::OnFrame max_fps=" << max_fps_
+                   << " queued=" << queued_frames_.size()
+                   << " scheduled=" << frames_scheduled_for_processing;
   refresh_frame_requester_.Stop();
 
   // Assume all enabled layers are unconverged after frame entry.
@@ -377,7 +386,11 @@ void ZeroHertzAdapterMode::OnFrame(Timestamp post_time,
   current_frame_id_++;
   scheduled_repeat_ = absl::nullopt;
   Timestamp task_post_time = clock_->CurrentTime();
-  TimeDelta time_spent_since_post = task_post_time - post_time;
+  TimeDelta delay = frame_delay_;
+  if (kAccountForEncodeSequenceContention) {
+    TimeDelta time_spent_since_post = task_post_time - post_time;
+    delay = std::max(frame_delay_ - time_spent_since_post, TimeDelta::Zero());
+  }
   TRACE_EVENT_ASYNC_BEGIN0(TRACE_DISABLED_BY_DEFAULT("webrtc"), "FrameToQueue2",
                            frame_id);
   queue_->PostDelayedHighPrecisionTask(
@@ -390,7 +403,7 @@ void ZeroHertzAdapterMode::OnFrame(Timestamp post_time,
                      (clock_->CurrentTime() - task_post_time).us());
                  ProcessOnDelayedCadence();
                }),
-      std::max(frame_delay_ - time_spent_since_post, TimeDelta::Zero()));
+      delay);
 }
 
 void ZeroHertzAdapterMode::OnDiscardedFrame() {
@@ -481,15 +494,9 @@ void ZeroHertzAdapterMode::ProcessOnDelayedCadence() {
   // Avoid sending the front frame for encoding (which could take a long time)
   // until we schedule a repeate.
   VideoFrame front_frame = queued_frames_.front();
-
-  // If there were two or more frames stored, we do not have to schedule repeats
-  // of the front frame.
   if (queued_frames_.size() > 1) {
     queued_frames_.pop_front();
   } else {
-    // There's only one frame to send. Schedule a repeat sequence, which is
-    // cancelled by `current_frame_id_` getting incremented should new frames
-    // arrive.
     ScheduleRepeat(current_frame_id_, HasQualityConverged());
   }
   SendFrameNow(front_frame);
@@ -697,6 +704,9 @@ void FrameCadenceAdapterImpl::OnConstraintsChanged(
                    << constraints.max_fps.value_or(-1);
   queue_->PostTask(SafeTask(safety_.flag(), [this, constraints] {
     RTC_DCHECK_RUN_ON(queue_);
+    RTC_LOG(LS_INFO) << "OnConstraintsChanged on queue min_fps="
+                     << constraints.min_fps.value_or(-1)
+                     << " max_fps=" << constraints.max_fps.value_or(-1);
     bool was_zero_hertz_enabled = IsZeroHertzScreenshareEnabled();
     source_constraints_ = constraints;
     MaybeReconfigureAdapters(was_zero_hertz_enabled);
@@ -708,22 +718,28 @@ void FrameCadenceAdapterImpl::OnFrameOnMainQueue(
     int frames_scheduled_for_processing,
     const VideoFrame& frame) {
   RTC_DCHECK_RUN_ON(queue_);
+  if (zero_hertz_adapter_ && kSimulateEncodeQueueContention) {
+    static int frame_counter = 0;
+    ++frame_counter;
+    if (frame_counter % kSimulatedEncodeQueueBlockEveryNFrames == 0) {
+      rtc::Thread::SleepMs(kSimulatedEncodeQueueBlockMs);
+    }
+  }
   current_adapter_mode_->OnFrame(post_time, frames_scheduled_for_processing,
                                  frame);
 }
 
 bool FrameCadenceAdapterImpl::IsZeroHertzScreenshareEnabled() const {
   RTC_DCHECK_RUN_ON(queue_);
-  return zero_hertz_screenshare_enabled_ && source_constraints_.has_value() &&
-         source_constraints_->max_fps.value_or(-1) > 0 &&
-         source_constraints_->min_fps.value_or(-1) == 0 &&
-         zero_hertz_params_.has_value();
+  return false;
 }
 
 void FrameCadenceAdapterImpl::MaybeReconfigureAdapters(
     bool was_zero_hertz_enabled) {
   RTC_DCHECK_RUN_ON(queue_);
   bool is_zero_hertz_enabled = IsZeroHertzScreenshareEnabled();
+  RTC_LOG(LS_INFO) << "MaybeReconfigureAdapters zero_hertz "
+                   << (is_zero_hertz_enabled ? "enabled" : "disabled");
   if (is_zero_hertz_enabled) {
     if (!was_zero_hertz_enabled) {
       zero_hertz_adapter_.emplace(queue_, clock_, callback_,

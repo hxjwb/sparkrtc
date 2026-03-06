@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -173,7 +174,7 @@ void FrameTimeWindow::AddRtcpPacketTypeCounter(
   control_digests_.push_back(std::move(entry));
   last_rtcp_digest_ms_ = time_ms;
   MaintainWindowSize();
-}
+}   
 
 void FrameTimeWindow::AddRtcpFeedbackEvent(int64_t time_ms,
                                            absl::string_view kind) {
@@ -248,121 +249,121 @@ std::string FormatBitrateLabel(uint32_t bitrate_bps) {
   return oss.str();
 }
 
-std::string CompressRateSeries(
-    const std::vector<std::pair<int64_t, uint32_t>>& points) {
-  if (points.empty()) {
-    return "none";
-  }
-  std::vector<std::pair<int64_t, uint32_t>> sorted = points;
-  std::sort(sorted.begin(), sorted.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
-  std::vector<std::pair<int64_t, uint32_t>> deduped;
-  deduped.reserve(sorted.size());
-  for (const auto& entry : sorted) {
-    if (!deduped.empty() && deduped.back().first == entry.first) {
-      deduped.back().second = entry.second;
-    } else {
-      deduped.push_back(entry);
-    }
-  }
-  if (deduped.size() == 1) {
-    std::ostringstream single;
-    single << deduped.front().first << "ms steady "
-           << FormatBitrateLabel(deduped.front().second);
-    return single.str();
-  }
+// std::string CompressRateSeries(
+//     const std::vector<std::pair<int64_t, uint32_t>>& points) {
+//   if (points.empty()) {
+//     return "none";
+//   }
+//   std::vector<std::pair<int64_t, uint32_t>> sorted = points;
+//   std::sort(sorted.begin(), sorted.end(),
+//             [](const auto& a, const auto& b) { return a.first < b.first; });
+//   std::vector<std::pair<int64_t, uint32_t>> deduped;
+//   deduped.reserve(sorted.size());
+//   for (const auto& entry : sorted) {
+//     if (!deduped.empty() && deduped.back().first == entry.first) {
+//       deduped.back().second = entry.second;
+//     } else {
+//       deduped.push_back(entry);
+//     }
+//   }
+//   if (deduped.size() == 1) {
+//     std::ostringstream single;
+//     single << deduped.front().first << "ms steady "
+//            << FormatBitrateLabel(deduped.front().second);
+//     return single.str();
+//   }
 
-  enum class Trend { kStable, kRise, kFall };
-  struct Segment {
-    int64_t start_ms;
-    int64_t end_ms;
-    uint32_t start_bps;
-    uint32_t end_bps;
-    Trend trend;
-  };
-  constexpr double kStablePct = 0.05;
-  constexpr uint32_t kStableAbsBps = 50000;
-  constexpr int64_t kMinSegmentMs = 120;
-  auto EvaluateTrend = [&](uint32_t start_bps, uint32_t end_bps) {
-    const double delta = static_cast<double>(end_bps) - start_bps;
-    const double stable_threshold =
-        std::max(kStableAbsBps, static_cast<uint32_t>(start_bps * kStablePct));
-    if (std::abs(delta) <= stable_threshold) {
-      return Trend::kStable;
-    }
-    return delta > 0 ? Trend::kRise : Trend::kFall;
-  };
-  std::vector<Segment> segments;
-  for (size_t i = 0; i + 1 < deduped.size(); ++i) {
-    const int64_t start_ms = deduped[i].first;
-    const int64_t end_ms = deduped[i + 1].first;
-    if (end_ms <= start_ms) {
-      continue;
-    }
-    const uint32_t start_bps = deduped[i].second;
-    const uint32_t end_bps = deduped[i + 1].second;
-    Trend trend = EvaluateTrend(start_bps, end_bps);
-    Segment current{start_ms, end_ms, start_bps, end_bps, trend};
-    segments.push_back(current);
-  }
-  if (segments.empty()) {
-    return "none";
-  }
-  std::vector<Segment> merged;
-  merged.reserve(segments.size());
-  for (const auto& seg : segments) {
-    const int64_t duration = seg.end_ms - seg.start_ms;
-    if (duration < kMinSegmentMs && !merged.empty()) {
-      Segment& prev = merged.back();
-      prev.end_ms = seg.end_ms;
-      prev.end_bps = seg.end_bps;
-      prev.trend = EvaluateTrend(prev.start_bps, prev.end_bps);
-      continue;
-    }
-    merged.push_back(seg);
-  }
-  std::vector<Segment> compacted;
-  compacted.reserve(merged.size());
-  for (const auto& seg : merged) {
-    if (compacted.empty()) {
-      compacted.push_back(seg);
-      continue;
-    }
-    Segment& prev = compacted.back();
-    if (prev.trend == seg.trend && prev.end_ms == seg.start_ms) {
-      prev.end_ms = seg.end_ms;
-      prev.end_bps = seg.end_bps;
-      prev.trend = EvaluateTrend(prev.start_bps, prev.end_bps);
-      continue;
-    }
-    compacted.push_back(seg);
-  }
-  if (compacted.empty()) {
-    return "none";
-  }
-  std::ostringstream oss;
-  for (size_t i = 0; i < compacted.size(); ++i) {
-    const Segment& seg = compacted[i];
-    if (i > 0) {
-      oss << "; ";
-    }
-    const std::string start_label = FormatBitrateLabel(seg.start_bps);
-    const std::string end_label = FormatBitrateLabel(seg.end_bps);
-    if (seg.trend == Trend::kStable) {
-      oss << seg.start_ms << "-" << seg.end_ms << "ms stable " << start_label;
-      if (seg.end_bps != seg.start_bps) {
-        oss << "->" << end_label;
-      }
-    } else if (seg.trend == Trend::kRise) {
-      oss << seg.start_ms << "-" << seg.end_ms << "ms rise " << start_label
-          << "->" << end_label;
-    } else {
-      oss << seg.start_ms << "-" << seg.end_ms << "ms drop " << start_label
-          << "->" << end_label;
-    }
-  }
-  return oss.str();
-}
+//   enum class Trend { kStable, kRise, kFall };
+//   struct Segment {
+//     int64_t start_ms;
+//     int64_t end_ms;
+//     uint32_t start_bps;
+//     uint32_t end_bps;
+//     Trend trend;
+//   };
+//   constexpr double kStablePct = 0.05;
+//   constexpr uint32_t kStableAbsBps = 50000;
+//   constexpr int64_t kMinSegmentMs = 120;
+//   auto EvaluateTrend = [&](uint32_t start_bps, uint32_t end_bps) {
+//     const double delta = static_cast<double>(end_bps) - start_bps;
+//     const double stable_threshold =
+//         std::max(kStableAbsBps, static_cast<uint32_t>(start_bps * kStablePct));
+//     if (std::abs(delta) <= stable_threshold) {
+//       return Trend::kStable;
+//     }
+//     return delta > 0 ? Trend::kRise : Trend::kFall;
+//   };
+//   std::vector<Segment> segments;
+//   for (size_t i = 0; i + 1 < deduped.size(); ++i) {
+//     const int64_t start_ms = deduped[i].first;
+//     const int64_t end_ms = deduped[i + 1].first;
+//     if (end_ms <= start_ms) {
+//       continue;
+//     }
+//     const uint32_t start_bps = deduped[i].second;
+//     const uint32_t end_bps = deduped[i + 1].second;
+//     Trend trend = EvaluateTrend(start_bps, end_bps);
+//     Segment current{start_ms, end_ms, start_bps, end_bps, trend};
+//     segments.push_back(current);
+//   }
+//   if (segments.empty()) {
+//     return "none";
+//   }
+//   std::vector<Segment> merged;
+//   merged.reserve(segments.size());
+//   for (const auto& seg : segments) {
+//     const int64_t duration = seg.end_ms - seg.start_ms;
+//     if (duration < kMinSegmentMs && !merged.empty()) {
+//       Segment& prev = merged.back();
+//       prev.end_ms = seg.end_ms;
+//       prev.end_bps = seg.end_bps;
+//       prev.trend = EvaluateTrend(prev.start_bps, prev.end_bps);
+//       continue;
+//     }
+//     merged.push_back(seg);
+//   }
+//   std::vector<Segment> compacted;
+//   compacted.reserve(merged.size());
+//   for (const auto& seg : merged) {
+//     if (compacted.empty()) {
+//       compacted.push_back(seg);
+//       continue;
+//     }
+//     Segment& prev = compacted.back();
+//     if (prev.trend == seg.trend && prev.end_ms == seg.start_ms) {
+//       prev.end_ms = seg.end_ms;
+//       prev.end_bps = seg.end_bps;
+//       prev.trend = EvaluateTrend(prev.start_bps, prev.end_bps);
+//       continue;
+//     }
+//     compacted.push_back(seg);
+//   }
+//   if (compacted.empty()) {
+//     return "none";
+//   }
+//   std::ostringstream oss;
+//   for (size_t i = 0; i < compacted.size(); ++i) {
+//     const Segment& seg = compacted[i];
+//     if (i > 0) {
+//       oss << "; ";
+//     }
+//     const std::string start_label = FormatBitrateLabel(seg.start_bps);
+//     const std::string end_label = FormatBitrateLabel(seg.end_bps);
+//     if (seg.trend == Trend::kStable) {
+//       oss << seg.start_ms << "-" << seg.end_ms << "ms stable " << start_label;
+//       if (seg.end_bps != seg.start_bps) {
+//         oss << "->" << end_label;
+//       }
+//     } else if (seg.trend == Trend::kRise) {
+//       oss << seg.start_ms << "-" << seg.end_ms << "ms rise " << start_label
+//           << "->" << end_label;
+//     } else {
+//       oss << seg.start_ms << "-" << seg.end_ms << "ms drop " << start_label
+//           << "->" << end_label;
+//     }
+//   }
+//   return oss.str();
+// }
 
 const char* PacketKindToString(PacketKind kind) {
   switch (kind) {
@@ -1161,61 +1162,6 @@ void FrameTimeWindow::PrintProfilingInfo(
     return important_rtp_timestamps.count(packet.rtp_timestamp) > 0;
   };
 
-  for (const auto& frame : frame_digests) {
-    RTC_LOG(LS_INFO) << "PRFL_FRAME rtp_ts=" << frame.rtp_timestamp
-                     << " frame_type=" << (frame.is_keyframe ? "key" : "delta")
-                     << " frame_size_bytes=" << frame.frame_size_bytes
-                     << " packets_expected=" << frame.packets_expected
-                     << " capture_ms=" << RelativeTimeMs(frame.capture_time_ms,
-                                                        time_base_ms)
-                     << " enc_start_ms=" << RelativeTimeMs(frame.enc_start_ms,
-                                                          time_base_ms)
-                     << " enc_end_ms="
-                     << RelativeTimeMs(frame.enc_end_ms, time_base_ms)
-                     << " first_send_ms="
-                     << RelativeTimeMs(frame.first_send_ms, time_base_ms)
-                     << " last_send_ms="
-                     << RelativeTimeMs(frame.last_send_ms, time_base_ms)
-                     << " first_recv_ms="
-                     << RelativeTimeMs(frame.first_recv_ms, time_base_ms)
-                     << " last_recv_ms="
-                     << RelativeTimeMs(frame.last_recv_ms, time_base_ms)
-                     << " deliver_to_decoder_ms="
-                     << RelativeTimeMs(frame.deliver_to_decoder_ms,
-                                       time_base_ms)
-                     << " decode_end_ms="
-                     << RelativeTimeMs(frame.decode_end_ms, time_base_ms)
-                     << " decode_time_ms=" << frame.decode_time_ms
-                     << " packets_received=" << frame.packets_received
-                     << " packets_lost=" << frame.packets_lost
-                     << " packets_recovered_rtx=" << frame.packets_recovered_rtx
-                     << " packets_recovered_fec=" << frame.packets_recovered_fec
-                     << " nack_count_for_frame=-1";
-  }
-
-  for (const auto& packet : packet_digests) {
-    if (!is_important_packet(packet)) {
-      continue;
-    }
-    RTC_LOG(LS_INFO) << "PRFL_PKT rtp_ts=" << packet.rtp_timestamp
-                     << " kind=" << PacketKindToString(packet.kind)
-                     << " rtp_seq=" << packet.rtp_sequence_number
-                     << " transport_seq=" << packet.transport_sequence_number
-                     << " send_ms=" << RelativeTimeMs(packet.send_time_ms,
-                                                      time_base_ms)
-                     << " recv_ms=" << RelativeTimeMs(packet.recv_time_ms,
-                                                      time_base_ms)
-                     << " size_bytes=" << packet.size_bytes
-                     << " rtx_target_seq="
-                     << (packet.rtx_target_seq.has_value()
-                             ? std::to_string(*packet.rtx_target_seq)
-                             : "-1")
-                     << " repair_id="
-                     << (packet.fec_repair_id.has_value()
-                             ? std::to_string(*packet.fec_repair_id)
-                             : "-1");
-  }
-
   const int64_t p95_send_gap = Percentile(send_gaps, 0.95);
   const int64_t p95_net_gap = Percentile(net_gaps, 0.95);
   const int64_t p95_recv_gap = Percentile(recv_gaps, 0.95);
@@ -1223,128 +1169,105 @@ void FrameTimeWindow::PrintProfilingInfo(
   const int64_t p50_one_way = Percentile(one_way_delays, 0.50);
   const int64_t p95_one_way = Percentile(one_way_delays, 0.95);
 
-  std::vector<std::string> tags;
-  if (loss_packets >= 3 || nack_sent >= 3 || rtx_recv > 0 || fec_recv > 0) {
-    tags.push_back("LOSSY");
-  }
-  if (p95_one_way >= 0 && p50_one_way >= 0 && (p95_one_way - p50_one_way) > 60) {
-    tags.push_back("NET_DELAY_JUMP");
-  }
-  const int64_t recv_plus_dec =
-      (p95_recv_gap >= 0 && p95_dec_gap >= 0) ? (p95_recv_gap + p95_dec_gap)
-                                              : -1;
-  const int64_t send_dom_threshold =
-      std::max<int64_t>(60, std::max(p95_net_gap, recv_plus_dec));
-  if (p95_send_gap > send_dom_threshold) {
-    tags.push_back("SEND_GAP_DOMINANT");
-  }
-  const int64_t recv_dom_threshold =
-      std::max<int64_t>(60, std::max(p95_send_gap, std::max(p95_net_gap, p95_dec_gap)));
-  if (p95_recv_gap > recv_dom_threshold) {
-    tags.push_back("RECV_GAP_DOMINANT");
-  }
-  if (p95_dec_gap > 40) {
-    tags.push_back("DECODE_SLOW");
-  }
-  if (tags.size() > 2) {
-    tags.resize(2);
-  }
-
-  std::string tags_joined;
-  for (size_t i = 0; i < tags.size(); ++i) {
-    if (i > 0) {
-      tags_joined.append(",");
+  std::unordered_map<uint32_t, std::vector<const PacketDigestEntry*>>
+      abnormal_packets_by_frame;
+  for (const auto& packet : packet_digests) {
+    if (!is_important_packet(packet)) {
+      continue;
     }
-    tags_joined.append(tags[i]);
+    const int64_t one_way_ms =
+        (packet.send_time_ms >= 0 && packet.recv_time_ms >= 0)
+            ? (packet.recv_time_ms - packet.send_time_ms)
+            : -1;
+    const bool is_repair = packet.kind != PacketKind::kMedia;
+    const bool is_lost = packet.recv_time_ms < 0;
+    const bool is_delayed = one_way_ms >= 0 && p95_one_way >= 0 &&
+                            one_way_ms > (p95_one_way + 20);
+    if (is_repair || is_lost || is_delayed) {
+      abnormal_packets_by_frame[packet.rtp_timestamp].push_back(&packet);
+    }
   }
-
-  RTC_LOG(LS_INFO) << "PRFL_SUM frame_count_in_window=" << decode_delays.size()
-                   << " stall_gap_ms=" << stall_gap_ms
-                   << " max_frame_e2e_ms=" << max_frame_e2e_ms
-                   << " loss_packets=" << loss_packets
-                   << " nack_sent=" << nack_sent
-                   << " rtx_recv=" << rtx_recv
-                   << " fec_recv=" << fec_recv
-                   << " p95_send_gap_ms=" << p95_send_gap
-                   << " p95_net_gap_ms=" << p95_net_gap
-                   << " p95_recv_gap_ms=" << p95_recv_gap
-                   << " p95_dec_gap_ms=" << p95_dec_gap
-                   << " p50_one_way_ms=" << p50_one_way
-                   << " p95_one_way_ms=" << p95_one_way;
-                  //  << " coarse_tags=" << tags_joined;
-
+  std::vector<std::pair<int64_t, uint32_t>> encoder_points_abs;
+  struct ControlLine {
+    int64_t time_ms = -1;
+    std::string text;
+  };
+  std::vector<ControlLine> control_lines;
+  control_lines.reserve(control_digests.size() + repair_digests.size());
+  for (const auto& c : control_digests) {
+    if (!control_in_window(c.time_ms)) {
+      continue;
+    }
+    if (c.type == ControlDigestEntry::Type::kRtcpFeedback) {
+      control_lines.push_back({c.time_ms, "<fb> kind=" + c.feedback_kind});
+    } else if (c.type == ControlDigestEntry::Type::kRtcpSignal) {
+      std::set<std::string> kinds;
+      kinds.insert("NACK");
+      if (c.rtcp_counter.pli_packets > 0) {
+        kinds.insert("PLI");
+      }
+      if (c.rtcp_counter.fir_packets > 0) {
+        kinds.insert("FIR");
+      }
+      std::string joined;
+      for (auto it = kinds.begin(); it != kinds.end(); ++it) {
+        if (it != kinds.begin()) {
+          joined.append(",");
+        }
+        joined.append(*it);
+      }
+      control_lines.push_back({c.time_ms, "<fb> kind=" + joined});
+    } else if (c.type == ControlDigestEntry::Type::kBweTargetRate) {
+      control_lines.push_back(
+          {c.time_ms, "<rate> bwe_target=" + FormatBitrateLabel(c.bitrate_bps)});
+    } else if (c.type == ControlDigestEntry::Type::kEncoderTargetRate) {
+      control_lines.push_back({c.time_ms,
+                               "<rate> encoder_target=" +
+                                   FormatBitrateLabel(c.bitrate_bps)});
+      encoder_points_abs.emplace_back(c.time_ms, c.bitrate_bps);
+    }
+  }
   for (const auto& repair : repair_digests) {
-    std::string repair_seqs;
-    for (size_t i = 0; i < repair.repair_packet_seqs.size(); ++i) {
-      if (i > 0) {
-        repair_seqs.append(",");
-      }
-      repair_seqs.append(std::to_string(repair.repair_packet_seqs[i]));
+    if (std::string(repair.type) != "RTX_BATCH") {
+      continue;
     }
-    std::string target_seqs;
-    for (size_t i = 0; i < repair.target_seqs.size(); ++i) {
-      if (i > 0) {
-        target_seqs.append(",");
-      }
-      target_seqs.append(std::to_string(repair.target_seqs[i]));
+    int64_t event_time_ms = repair.repair_first_send_ms;
+    if (event_time_ms < 0) {
+      event_time_ms = repair.nack_request_ms;
     }
-    std::string recovered_seqs;
-    for (size_t i = 0; i < repair.recovered_seqs.size(); ++i) {
-      if (i > 0) {
-        recovered_seqs.append(",");
-      }
-      recovered_seqs.append(std::to_string(repair.recovered_seqs[i]));
+    if (event_time_ms < 0) {
+      event_time_ms = repair.repair_last_recv_ms;
     }
-    std::string too_late_seqs;
-    for (size_t i = 0; i < repair.too_late_seqs.size(); ++i) {
-      if (i > 0) {
-        too_late_seqs.append(",");
-      }
-      too_late_seqs.append(std::to_string(repair.too_late_seqs[i]));
-    }
-    std::string failed_seqs;
-    for (size_t i = 0; i < repair.failed_seqs.size(); ++i) {
-      if (i > 0) {
-        failed_seqs.append(",");
-      }
-      failed_seqs.append(std::to_string(repair.failed_seqs[i]));
-    }
-    RTC_LOG(LS_INFO) << "PRFL_REPAIR repair_id=" << repair.repair_id
-                     << " type=" << repair.type
-                     << " target_frame_ts="
-                     << (repair.target_frame_ts.has_value()
-                             ? std::to_string(*repair.target_frame_ts)
-                             : "0")
-                     << " target_seqs="
-                     << (!target_seqs.empty() ? target_seqs : "-")
-                     << " target_seq_count=" << repair.target_seq_count
-                     << " repair_packet_seqs=" << repair_seqs
-                     << " repair_packet_count=" << repair.repair_packet_count
-                     << " nack_request_ms="
-                     << RelativeTimeMs(repair.nack_request_ms, time_base_ms)
-                     << " repair_first_send_ms="
-                     << RelativeTimeMs(repair.repair_first_send_ms, time_base_ms)
-                     << " repair_last_send_ms="
-                     << RelativeTimeMs(repair.repair_last_send_ms, time_base_ms)
-                     << " repair_first_recv_ms="
-                     << RelativeTimeMs(repair.repair_first_recv_ms, time_base_ms)
-                     << " repair_last_recv_ms="
-                     << RelativeTimeMs(repair.repair_last_recv_ms, time_base_ms)
-                     << " duration_ms=" << repair.duration_ms
-                     << " recovered_seqs="
-                     << (!recovered_seqs.empty() ? recovered_seqs : "-")
-                     << " recovered_seq_count=" << repair.recovered_seq_count
-                     << " too_late_seqs="
-                     << (!too_late_seqs.empty() ? too_late_seqs : "-")
-                     << " too_late_seq_count=" << repair.too_late_seq_count
-                     << " failed_seqs="
-                     << (!failed_seqs.empty() ? failed_seqs : "-")
-                     << " failed_seq_count=" << repair.failed_seq_count
-                     << " outcome=" << repair.outcome
-                     ;
+    std::ostringstream oss;
+    oss << "<lr> repair_id=" << repair.repair_id
+        << " target_frames="
+        << (!repair.target_frames_summary.empty() ? repair.target_frames_summary
+                                                  : "0")
+        << " packet_count=" << repair.repair_packet_count
+        << " outcome=" << repair.outcome
+        << " frame_outcomes="
+        << (!repair.frame_outcome_summary.empty() ? repair.frame_outcome_summary
+                                                  : "-")
+        << " duration_ms=" << repair.duration_ms
+        << " last_recv_ms="
+        << RelativeTimeMs(repair.repair_last_recv_ms, time_base_ms);
+    control_lines.push_back({event_time_ms, oss.str()});
   }
+  std::sort(control_lines.begin(), control_lines.end(),
+            [](const ControlLine& a, const ControlLine& b) {
+              const int64_t a_key = (a.time_ms >= 0)
+                                        ? a.time_ms
+                                        : std::numeric_limits<int64_t>::max();
+              const int64_t b_key = (b.time_ms >= 0)
+                                        ? b.time_ms
+                                        : std::numeric_limits<int64_t>::max();
+              if (a_key != b_key) {
+                return a_key < b_key;
+              }
+              return a.text < b.text;
+            });
 
-  RTC_LOG(LS_INFO) << "[STALL_HEADER]";
+  RTC_LOG(LS_INFO) << "[event_context]";
   RTC_LOG(LS_INFO) << "codec=" << report_header_.codec
                    << " resolution=" << report_header_.width << "x"
                    << report_header_.height
@@ -1356,20 +1279,17 @@ void FrameTimeWindow::PrintProfilingInfo(
                    << " stall_gap_ms=" << stall_gap_ms
                    << " stall_report_size_bytes=" << stall_report_size_bytes
                    << " frame_count_in_window=" << decode_delays.size();
-  RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "[WINDOW_SUMMARY]";
   RTC_LOG(LS_INFO) << "max_frame_e2e_ms=" << max_frame_e2e_ms
                    << " loss_packets=" << loss_packets
                    << " nack_sent=" << nack_sent
                    << " rtx_recv=" << rtx_recv
-                   << " fec_recv=" << fec_recv;
-  RTC_LOG(LS_INFO) << "p50_one_way_ms=" << p50_one_way
+                   << " fec_recv=" << fec_recv
+                   << " p50_one_way_ms=" << p50_one_way
                    << " p95_one_way_ms=" << p95_one_way;
   RTC_LOG(LS_INFO) << "p95_send_gap_ms=" << p95_send_gap
                    << " p95_net_gap_ms=" << p95_net_gap
                    << " p95_recv_gap_ms=" << p95_recv_gap
                    << " p95_dec_gap_ms=" << p95_dec_gap;
-  RTC_LOG(LS_INFO) << "coarse_tags=" << tags_joined;
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "[TIMELINE_DIGEST]";
   int64_t prev_capture_time_ms = -1;
@@ -1406,104 +1326,91 @@ void FrameTimeWindow::PrintProfilingInfo(
                      << last_recv_to_deliver_ms << " " << decode_ms << ")"
                      << " stall=" << (stall_flag ? "True" : "False")
                      << " prev_gap=" << prev_decode_end_gap_ms;
+    auto packet_it = abnormal_packets_by_frame.find(f.rtp_timestamp);
+    if (packet_it != abnormal_packets_by_frame.end() &&
+        !packet_it->second.empty()) {
+      auto frame_packets = packet_it->second;
+      std::sort(frame_packets.begin(), frame_packets.end(),
+                [](const PacketDigestEntry* a, const PacketDigestEntry* b) {
+                  if (a->rtp_sequence_number != b->rtp_sequence_number) {
+                    return a->rtp_sequence_number < b->rtp_sequence_number;
+                  }
+                  const int64_t a_send =
+                      (a->send_time_ms >= 0)
+                          ? a->send_time_ms
+                          : std::numeric_limits<int64_t>::max();
+                  const int64_t b_send =
+                      (b->send_time_ms >= 0)
+                          ? b->send_time_ms
+                          : std::numeric_limits<int64_t>::max();
+                  return a_send < b_send;
+                });
+      size_t idx = 0;
+      while (idx < frame_packets.size()) {
+        const PacketDigestEntry* packet = frame_packets[idx];
+        if (packet->recv_time_ms < 0 && packet->kind == PacketKind::kMedia) {
+          const uint16_t start_seq = packet->rtp_sequence_number;
+          uint16_t end_seq = start_seq;
+          size_t j = idx + 1;
+          while (j < frame_packets.size()) {
+            const PacketDigestEntry* next = frame_packets[j];
+            if (next->kind != PacketKind::kMedia || next->recv_time_ms >= 0) {
+              break;
+            }
+            if (static_cast<uint16_t>(end_seq + 1) !=
+                next->rtp_sequence_number) {
+              break;
+            }
+            end_seq = next->rtp_sequence_number;
+            ++j;
+          }
+          RTC_LOG(LS_INFO) << "  pkt loss seq="
+                           << (start_seq == end_seq
+                                   ? std::to_string(start_seq)
+                                   : std::to_string(start_seq) + "-" +
+                                         std::to_string(end_seq))
+                           << " count=" << (end_seq - start_seq + 1);
+          idx = j;
+          continue;
+        }
+        const int64_t one_way_ms =
+            (packet->send_time_ms >= 0 && packet->recv_time_ms >= 0)
+                ? (packet->recv_time_ms - packet->send_time_ms)
+                : -1;
+        std::string pkt_tag;
+        if (packet->kind != PacketKind::kMedia) {
+          pkt_tag.append("REPAIR");
+        }
+        if (one_way_ms >= 0 && p95_one_way >= 0 && one_way_ms > (p95_one_way + 20)) {
+          if (!pkt_tag.empty()) {
+            pkt_tag.append("|");
+          }
+          pkt_tag.append("DELAY");
+        }
+        RTC_LOG(LS_INFO) << "  pkt kind=" << PacketKindToString(packet->kind)
+                         << " seq=" << packet->rtp_sequence_number
+                         << " send_ms="
+                         << RelativeTimeMs(packet->send_time_ms, time_base_ms)
+                         << " recv_ms="
+                         << RelativeTimeMs(packet->recv_time_ms, time_base_ms)
+                         << " one_way_ms=" << one_way_ms
+                         << " tag=" << (pkt_tag.empty() ? "-" : pkt_tag);
+        ++idx;
+      }
+    }
     prev_capture_time_ms = f.capture_time_ms;
     prev_decode_end_time_ms_rx = f.decode_end_time_ms_rx;
   }
   RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "[CONTROL_DIGEST]";
-  std::vector<const ControlDigestEntry*> rtcp_events;
-  std::vector<std::pair<int64_t, uint32_t>> bwe_points;
-  std::vector<std::pair<int64_t, uint32_t>> encoder_points;
-  std::vector<std::pair<int64_t, uint32_t>> encoder_points_abs;
-  for (const auto& c : control_digests) {
-    if (c.type == ControlDigestEntry::Type::kRtcpSignal) {
-      if (control_in_window(c.time_ms)) {
-        rtcp_events.push_back(&c);
-      }
-    } else if (c.type == ControlDigestEntry::Type::kRtcpFeedback) {
-      if (control_in_window(c.time_ms)) {
-        rtcp_events.push_back(&c);
-      }
-    } else if (c.type == ControlDigestEntry::Type::kBweTargetRate) {
-      if (control_in_window(c.time_ms)) {
-        bwe_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
-                                c.bitrate_bps);
-      }
-    } else if (c.type == ControlDigestEntry::Type::kEncoderTargetRate) {
-      if (control_in_window(c.time_ms)) {
-        encoder_points.emplace_back(RelativeTimeMs(c.time_ms, time_base_ms),
-                                    c.bitrate_bps);
-        encoder_points_abs.emplace_back(c.time_ms, c.bitrate_bps);
-      }
-    }
-  }
-
-  RTC_LOG(LS_INFO) << "RTCP_RX:";
-  if (rtcp_events.empty()) {
+  RTC_LOG(LS_INFO) << "[control_digest]";
+  if (control_lines.empty()) {
     RTC_LOG(LS_INFO) << "none";
   } else {
-    std::map<int64_t, std::set<std::string>> events_by_time;
-    for (const auto* c : rtcp_events) {
-      if (c->type == ControlDigestEntry::Type::kRtcpFeedback) {
-        events_by_time[c->time_ms].insert(c->feedback_kind);
-      } else {
-        events_by_time[c->time_ms].insert("NACK");
-        if (c->rtcp_counter.pli_packets > 0) {
-          events_by_time[c->time_ms].insert("PLI");
-        }
-        if (c->rtcp_counter.fir_packets > 0) {
-          events_by_time[c->time_ms].insert("FIR");
-        }
-      }
-    }
-    for (const auto& entry : events_by_time) {
-      std::string joined;
-      for (auto it = entry.second.begin(); it != entry.second.end(); ++it) {
-        if (it != entry.second.begin()) {
-          joined.append(",");
-        }
-        joined.append(*it);
-      }
-      RTC_LOG(LS_INFO) << RelativeTimeMs(entry.first, time_base_ms)
-                       << ": type=" << (joined.empty() ? "-" : joined);
+    for (const auto& line : control_lines) {
+      RTC_LOG(LS_INFO) << RelativeTimeMs(line.time_ms, time_base_ms)
+                       << " " << line.text;
     }
   }
-
-  RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "RTX_BATCH:";
-  bool has_rtx_batch = false;
-  for (const auto& repair : repair_digests) {
-    if (std::string(repair.type) != "RTX_BATCH") {
-      continue;
-    }
-    has_rtx_batch = true;
-    RTC_LOG(LS_INFO) << RelativeTimeMs(repair.repair_first_send_ms,
-                                       time_base_ms)
-                     << ": repair_id=" << repair.repair_id
-                     << " target_frames="
-                     << (!repair.target_frames_summary.empty()
-                             ? repair.target_frames_summary
-                             : "0")
-                     << " packet_count=" << repair.repair_packet_count
-                     << " outcome=" << repair.outcome
-                     << " frame_outcomes="
-                     << (!repair.frame_outcome_summary.empty()
-                             ? repair.frame_outcome_summary
-                             : "-")
-                     << " duration_ms=" << repair.duration_ms
-                     << " last_recv_ms="
-                     << RelativeTimeMs(repair.repair_last_recv_ms, time_base_ms);
-  }
-  if (!has_rtx_batch) {
-    RTC_LOG(LS_INFO) << "none";
-  }
-
-  RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "BWE_TARGET_RATE (compressed):";
-  RTC_LOG(LS_INFO) << CompressRateSeries(bwe_points);
-  RTC_LOG(LS_INFO) << "";
-  RTC_LOG(LS_INFO) << "ENCODER_TARGET_RATE (compressed):";
-  RTC_LOG(LS_INFO) << CompressRateSeries(encoder_points);
   if (report_header_.fps_nominal > 0 && !encoder_points_abs.empty()) {
     std::sort(encoder_points_abs.begin(), encoder_points_abs.end(),
               [](const auto& a, const auto& b) { return a.first < b.first; });

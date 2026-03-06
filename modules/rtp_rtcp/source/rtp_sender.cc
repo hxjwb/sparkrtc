@@ -46,6 +46,7 @@ namespace {
 
 constexpr size_t kMinAudioPaddingLength = 50;
 constexpr size_t kRtpHeaderLength = 12;
+constexpr TimeDelta kMaxRetransmissionRtt = TimeDelta::Millis(80);
 
 // Min size needed to get payload padding from packet history.
 constexpr int kMinPayloadPaddingBytes = 50;
@@ -341,14 +342,24 @@ void RTPSender::OnReceivedAckOnRtxSsrc(
 void RTPSender::OnReceivedNack(
     const std::vector<uint16_t>& nack_sequence_numbers,
     int64_t avg_rtt) {
-  packet_history_->SetRtt(TimeDelta::Millis(5 + avg_rtt));
+  TimeDelta retransmit_rtt = TimeDelta::Millis(5 + avg_rtt);
+  if (retransmit_rtt > kMaxRetransmissionRtt) {
+    retransmit_rtt = kMaxRetransmissionRtt;
+  }
+  packet_history_->SetRtt(retransmit_rtt);
+  bool rate_limited = false;
   for (uint16_t seq_no : nack_sequence_numbers) {
     const int32_t bytes_sent = ReSendPacket(seq_no);
     if (bytes_sent < 0) {
-      // Failed to send one Sequence number. Give up the rest in this nack.
-      RTC_LOG(LS_WARNING) << "Failed resending RTP packet " << seq_no
-                          << ", Discard rest of packets.";
-      break;
+      // Rate limiter blocked retransmission; try remaining packets and let
+      // later NACKs retry.
+      if (!rate_limited) {
+        RTC_LOG(LS_WARNING)
+            << "RTX rate limited on sequence number " << seq_no
+            << ", skipping some NACKs in this batch.";
+        rate_limited = true;
+      }
+      continue;
     }
   }
 }
