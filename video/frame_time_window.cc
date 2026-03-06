@@ -445,7 +445,7 @@ void FrameTimeWindow::PrintProfilingInfo(
     uint32_t stall_report_size_bytes,
     uint32_t nack_sent,
     TwccTimeCorrelator* twcc_correlator) {
-  RTC_LOG(LS_INFO) << "=== Profiling Report ===";
+  RTC_LOG(LS_INFO) << "===== Profiling Report ===";
   RTC_LOG(LS_INFO) << "PRFL_REPORT codec=" << report_header_.codec
                    << " width=" << report_header_.width
                    << " height=" << report_header_.height
