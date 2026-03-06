@@ -85,4 +85,4 @@
 .aider*
 /profix
 profix/*
-logs/*
+/logs/*
