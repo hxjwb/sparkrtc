@@ -365,17 +365,17 @@ std::string FormatBitrateLabel(uint32_t bitrate_bps) {
 //   return oss.str();
 // }
 
-const char* PacketKindToString(PacketKind kind) {
-  switch (kind) {
-    case PacketKind::kMedia:
-      return "MEDIA";
-    case PacketKind::kRtx:
-      return "RTX";
-    case PacketKind::kFec:
-      return "FEC";
-  }
-  return "UNKNOWN";
-}
+// const char* PacketKindToString(PacketKind kind) {
+//   switch (kind) {
+//     case PacketKind::kMedia:
+//       return "MEDIA";
+//     case PacketKind::kRtx:
+//       return "RTX";
+//     case PacketKind::kFec:
+//       return "FEC";
+//   }
+//   return "UNKNOWN";
+// }
 
 struct PacketDigestEntry {
   uint32_t rtp_timestamp = 0;
