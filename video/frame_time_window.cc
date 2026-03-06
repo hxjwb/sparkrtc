@@ -1144,24 +1144,6 @@ void FrameTimeWindow::PrintProfilingInfo(
     return time_ms >= min_capture_ms && time_ms <= max_window_ms;
   };
 
-  std::unordered_set<uint32_t> important_rtp_timestamps;
-  important_rtp_timestamps.insert(stall_rtp_timestamp);
-  for (const auto& frame : frame_digests) {
-    if (frame.packets_lost > 0 || frame.packets_recovered_rtx > 0 ||
-        frame.packets_recovered_fec > 0) {
-      important_rtp_timestamps.insert(frame.rtp_timestamp);
-    }
-  }
-  auto is_important_packet = [&](const PacketDigestEntry& packet) {
-    if (packet.kind != PacketKind::kMedia) {
-      return true;
-    }
-    if (packet.recv_time_ms < 0) {
-      return true;
-    }
-    return important_rtp_timestamps.count(packet.rtp_timestamp) > 0;
-  };
-
   const int64_t p95_send_gap = Percentile(send_gaps, 0.95);
   const int64_t p95_net_gap = Percentile(net_gaps, 0.95);
   const int64_t p95_recv_gap = Percentile(recv_gaps, 0.95);
@@ -1170,22 +1152,12 @@ void FrameTimeWindow::PrintProfilingInfo(
   const int64_t p95_one_way = Percentile(one_way_delays, 0.95);
 
   std::unordered_map<uint32_t, std::vector<const PacketDigestEntry*>>
-      abnormal_packets_by_frame;
+      packets_by_frame;
   for (const auto& packet : packet_digests) {
-    if (!is_important_packet(packet)) {
+    if (packet.rtp_timestamp == 0) {
       continue;
     }
-    const int64_t one_way_ms =
-        (packet.send_time_ms >= 0 && packet.recv_time_ms >= 0)
-            ? (packet.recv_time_ms - packet.send_time_ms)
-            : -1;
-    const bool is_repair = packet.kind != PacketKind::kMedia;
-    const bool is_lost = packet.recv_time_ms < 0;
-    const bool is_delayed = one_way_ms >= 0 && p95_one_way >= 0 &&
-                            one_way_ms > (p95_one_way + 20);
-    if (is_repair || is_lost || is_delayed) {
-      abnormal_packets_by_frame[packet.rtp_timestamp].push_back(&packet);
-    }
+    packets_by_frame[packet.rtp_timestamp].push_back(&packet);
   }
   std::vector<std::pair<int64_t, uint32_t>> encoder_points_abs;
   struct ControlLine {
@@ -1292,114 +1264,93 @@ void FrameTimeWindow::PrintProfilingInfo(
                    << " p95_dec_gap_ms=" << p95_dec_gap;
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "[TIMELINE_DIGEST]";
-  int64_t prev_capture_time_ms = -1;
-  int64_t prev_decode_end_time_ms_rx = -1;
-  for (size_t i = 0; i < frame_digests.size(); ++i) {
-    const auto& f = frame_digests[i];
+  for (const auto& f : frame_digests) {
     const auto gap_or_minus_one = [](int64_t start_ms, int64_t end_ms) {
       if (start_ms < 0 || end_ms < 0) {
         return int64_t{-1};
       }
       return end_ms - start_ms;
     };
-    const int64_t capture_ms = RelativeTimeMs(f.capture_time_ms, time_base_ms);
-    const int64_t prev_capture_gap_ms =
-        gap_or_minus_one(prev_capture_time_ms, f.capture_time_ms);
-    const int64_t capture_to_enc_ms =
-        gap_or_minus_one(f.capture_time_ms, f.enc_start_ms);
     const int64_t encode_ms = gap_or_minus_one(f.enc_start_ms, f.enc_end_ms);
-    const int64_t enc_to_first_send_ms =
-        gap_or_minus_one(f.enc_end_ms, f.first_send_ms);
-    const int64_t first_send_to_last_recv_ms =
-        gap_or_minus_one(f.first_send_ms, f.last_recv_ms);
-    const int64_t last_recv_to_deliver_ms =
+    const int64_t net_ms = gap_or_minus_one(f.first_send_ms, f.last_recv_ms);
+    const int64_t wait_ms =
         gap_or_minus_one(f.last_recv_ms, f.deliver_to_decoder_ms);
     const int64_t decode_ms = f.decode_time_ms;
-    const int64_t prev_decode_end_gap_ms =
-        gap_or_minus_one(prev_decode_end_time_ms_rx, f.decode_end_time_ms_rx);
-    const int stall_flag = (f.rtp_timestamp == stall_rtp_timestamp) ? 1 : 0;
-    RTC_LOG(LS_INFO) << capture_ms << " rtpts=" << f.rtp_timestamp
-                     << " gaps=(" << prev_capture_gap_ms << " "
-                     << capture_to_enc_ms << " " << encode_ms << " "
-                     << enc_to_first_send_ms << " "
-                     << first_send_to_last_recv_ms << " "
-                     << last_recv_to_deliver_ms << " " << decode_ms << ")"
-                     << " stall=" << (stall_flag ? "True" : "False")
-                     << " prev_gap=" << prev_decode_end_gap_ms;
-    auto packet_it = abnormal_packets_by_frame.find(f.rtp_timestamp);
-    if (packet_it != abnormal_packets_by_frame.end() &&
-        !packet_it->second.empty()) {
-      auto frame_packets = packet_it->second;
-      std::sort(frame_packets.begin(), frame_packets.end(),
-                [](const PacketDigestEntry* a, const PacketDigestEntry* b) {
-                  if (a->rtp_sequence_number != b->rtp_sequence_number) {
-                    return a->rtp_sequence_number < b->rtp_sequence_number;
-                  }
-                  const int64_t a_send =
-                      (a->send_time_ms >= 0)
-                          ? a->send_time_ms
-                          : std::numeric_limits<int64_t>::max();
-                  const int64_t b_send =
-                      (b->send_time_ms >= 0)
-                          ? b->send_time_ms
-                          : std::numeric_limits<int64_t>::max();
+    const int64_t e2e_ms = gap_or_minus_one(f.enc_end_ms, f.decode_end_ms);
+    RTC_LOG(LS_INFO) << "RTP TS: " << f.rtp_timestamp
+                     << ", Frame Size: " << f.frame_size_bytes
+                     << ", Encode " << encode_ms
+                     << ", Net " << net_ms
+                     << ", Wait " << wait_ms
+                     << ", Decode " << decode_ms
+                     << " E2E " << e2e_ms;
+    auto packet_it = packets_by_frame.find(f.rtp_timestamp);
+    if (packet_it == packets_by_frame.end() || packet_it->second.empty()) {
+      continue;
+    }
+    auto frame_packets = packet_it->second;
+    std::sort(frame_packets.begin(), frame_packets.end(),
+              [](const PacketDigestEntry* a, const PacketDigestEntry* b) {
+                const int64_t a_send =
+                    (a->send_time_ms >= 0)
+                        ? a->send_time_ms
+                        : std::numeric_limits<int64_t>::max();
+                const int64_t b_send =
+                    (b->send_time_ms >= 0)
+                        ? b->send_time_ms
+                        : std::numeric_limits<int64_t>::max();
+                if (a_send != b_send) {
                   return a_send < b_send;
-                });
-      size_t idx = 0;
-      while (idx < frame_packets.size()) {
-        const PacketDigestEntry* packet = frame_packets[idx];
-        if (packet->recv_time_ms < 0 && packet->kind == PacketKind::kMedia) {
-          const uint16_t start_seq = packet->rtp_sequence_number;
-          uint16_t end_seq = start_seq;
-          size_t j = idx + 1;
-          while (j < frame_packets.size()) {
-            const PacketDigestEntry* next = frame_packets[j];
-            if (next->kind != PacketKind::kMedia || next->recv_time_ms >= 0) {
-              break;
-            }
-            if (static_cast<uint16_t>(end_seq + 1) !=
-                next->rtp_sequence_number) {
-              break;
-            }
-            end_seq = next->rtp_sequence_number;
-            ++j;
-          }
-          RTC_LOG(LS_INFO) << "  pkt loss seq="
-                           << (start_seq == end_seq
-                                   ? std::to_string(start_seq)
-                                   : std::to_string(start_seq) + "-" +
-                                         std::to_string(end_seq))
-                           << " count=" << (end_seq - start_seq + 1);
-          idx = j;
-          continue;
+                }
+                if (a->transport_sequence_number !=
+                    b->transport_sequence_number) {
+                  return a->transport_sequence_number <
+                         b->transport_sequence_number;
+                }
+                return a->rtp_sequence_number < b->rtp_sequence_number;
+              });
+    int64_t base_send_ms = f.first_send_ms;
+    if (base_send_ms < 0) {
+      for (const auto* packet : frame_packets) {
+        if (packet->send_time_ms >= 0) {
+          base_send_ms = packet->send_time_ms;
+          break;
         }
-        const int64_t one_way_ms =
-            (packet->send_time_ms >= 0 && packet->recv_time_ms >= 0)
-                ? (packet->recv_time_ms - packet->send_time_ms)
-                : -1;
-        std::string pkt_tag;
-        if (packet->kind != PacketKind::kMedia) {
-          pkt_tag.append("REPAIR");
-        }
-        if (one_way_ms >= 0 && p95_one_way >= 0 && one_way_ms > (p95_one_way + 20)) {
-          if (!pkt_tag.empty()) {
-            pkt_tag.append("|");
-          }
-          pkt_tag.append("DELAY");
-        }
-        RTC_LOG(LS_INFO) << "  pkt kind=" << PacketKindToString(packet->kind)
-                         << " seq=" << packet->rtp_sequence_number
-                         << " send_ms="
-                         << RelativeTimeMs(packet->send_time_ms, time_base_ms)
-                         << " recv_ms="
-                         << RelativeTimeMs(packet->recv_time_ms, time_base_ms)
-                         << " one_way_ms=" << one_way_ms
-                         << " tag=" << (pkt_tag.empty() ? "-" : pkt_tag);
-        ++idx;
       }
     }
-    prev_capture_time_ms = f.capture_time_ms;
-    prev_decode_end_time_ms_rx = f.decode_end_time_ms_rx;
+    int64_t base_recv_ms = f.first_recv_ms;
+    if (base_recv_ms < 0) {
+      for (const auto* packet : frame_packets) {
+        if (packet->recv_time_ms >= 0) {
+          base_recv_ms = packet->recv_time_ms;
+          break;
+        }
+      }
+    }
+    const bool has_transport_base = !frame_packets.empty();
+    const uint16_t base_transport_seq =
+        has_transport_base ? frame_packets.front()->transport_sequence_number
+                           : 0;
+    for (const auto* packet : frame_packets) {
+      const int64_t send_delta =
+          (base_send_ms >= 0 && packet->send_time_ms >= 0)
+              ? (packet->send_time_ms - base_send_ms)
+              : -1;
+      const int64_t recv_delta =
+          (base_recv_ms >= 0 && packet->recv_time_ms >= 0)
+              ? (packet->recv_time_ms - base_recv_ms)
+              : -1;
+      const int trans_delta =
+          has_transport_base
+              ? static_cast<uint16_t>(packet->transport_sequence_number -
+                                      base_transport_seq)
+              : -1;
+      RTC_LOG(LS_INFO) << "P: seq " << packet->rtp_sequence_number
+                       << ", size " << packet->size_bytes
+                       << ", send_delta " << send_delta
+                       << ", trans_delta " << trans_delta
+                       << ", recv_delta " << recv_delta;
+    }
   }
   RTC_LOG(LS_INFO) << "";
   RTC_LOG(LS_INFO) << "[control_digest]";
