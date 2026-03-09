@@ -280,33 +280,16 @@ void FrameTimeWindow::PrintProfilingInfo(
         continue;
       }
 
-      int64_t base_send_ms = -1;
-      int64_t base_recv_ms = -1;
-      auto consider_packet_for_base = [&](const PacketTimingInfo& packet) {
-        if (packet.send_time_ms >= 0 &&
-            (base_send_ms < 0 || packet.send_time_ms < base_send_ms)) {
-          base_send_ms = packet.send_time_ms;
-        }
-        const int64_t recv_ms = recv_time_ms(packet.transport_sequence_number);
-        if (recv_ms >= 0 && (base_recv_ms < 0 || recv_ms < base_recv_ms)) {
-          base_recv_ms = recv_ms;
-        }
-      };
-      for (const auto& p : frame->media_packets) {
-        consider_packet_for_base(p);
-      }
-      for (const auto& p : frame->retrans_packets) {
-        consider_packet_for_base(p);
-      }
-
       auto print_packet = [&](const PacketTimingInfo& packet) {
         const int64_t recv_ms = recv_time_ms(packet.transport_sequence_number);
         const int64_t send_delta_ms =
-            (base_send_ms >= 0 && packet.send_time_ms >= 0)
-                ? (packet.send_time_ms - base_send_ms)
+            (first_send_ms >= 0 && packet.send_time_ms >= 0)
+                ? (packet.send_time_ms - first_send_ms)
                 : -1;
         const int64_t recv_delta_ms =
-            (base_recv_ms >= 0 && recv_ms >= 0) ? (recv_ms - base_recv_ms) : -1;
+            (frame->encode_end_time_ms >= 0 && recv_ms >= 0)
+                ? (recv_ms - frame->encode_end_time_ms)
+                : -1;
         RTC_LOG(LS_INFO) << " P: seq " << packet.rtp_sequence_number
                          << ", size " << packet.size_bytes
                          << ", send_delta "
