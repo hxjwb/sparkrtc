@@ -281,18 +281,18 @@ void FrameTimeWindow::PrintProfilingInfo(
         const char* kind = (packet.kind == PacketKind::kRtx) ? "RTX" : "MEDIA";
         RTC_LOG(LS_INFO) << "P: kind=" << kind
                          << " rtp_seq=" << packet.rtp_sequence_number
-                         << " transport_seq=" << packet.transport_sequence_number
+                        //  << " transport_seq=" << packet.transport_sequence_number
                          << " size=" << packet.size_bytes
                          << " send_delta_ms="
                          << (send_delta_ms >= 0 ? std::to_string(send_delta_ms)
                                                 : "None")
                          << " recv_delta_ms="
                          << (recv_delta_ms >= 0 ? std::to_string(recv_delta_ms)
-                                                : "None")
-                         << " rtx_target_seq="
-                         << (packet.rtx_target_seq.has_value()
-                                 ? std::to_string(*packet.rtx_target_seq)
-                                 : "None");
+                                                : "None");
+                        //  << " rtx_target_seq="
+                        //  << (packet.rtx_target_seq.has_value()
+                        //          ? std::to_string(*packet.rtx_target_seq)
+                        //          : "None");
       };
 
       for (const auto& p : frame->media_packets) {
