@@ -10,9 +10,11 @@
 
 #include "video/frame_time_window.h"
 
+#include <string>
 #include <utility>
 
 #include "rtc_base/logging.h"
+#include "video/twcc_time_correlator.h"
 
 namespace webrtc {
 
@@ -196,7 +198,7 @@ void FrameTimeWindow::PrintProfilingInfo(
     int64_t stall_gap_ms,
     uint32_t stall_report_size_bytes,
     uint32_t nack_sent,
-    TwccTimeCorrelator*) {
+    TwccTimeCorrelator* twcc_correlator) {
   RTC_LOG(LS_INFO) << "===== Profiling Report ===";
 
   RTC_LOG(LS_INFO) << "[event_digest]";
@@ -217,8 +219,19 @@ void FrameTimeWindow::PrintProfilingInfo(
   if (decode_delays.empty()) {
     RTC_LOG(LS_INFO) << "none";
   } else {
+    auto recv_time_ms = [&](uint16_t transport_sequence_number) -> int64_t {
+      if (!twcc_correlator) {
+        return -1;
+      }
+      auto packet_time = twcc_correlator->GetPacketTime(transport_sequence_number);
+      if (!packet_time.has_value()) {
+        return -1;
+      }
+      return packet_time->receive_time_us / 1000;
+    };
+
     for (const auto& d : decode_delays) {
-      const FrameTimingInfo* frame = FindFrameByTimestamp(d.rtp_timestamp);
+      FrameTimingInfo* frame = FindFrameByTimestamp(d.rtp_timestamp);
       const int64_t decode_ms = d.decode_delay_us / 1000;
       const int64_t assemble_to_decode_ms = d.assemble_to_decode_us / 1000;
       const int64_t decode_end_ms_rx =
@@ -233,6 +246,61 @@ void FrameTimeWindow::PrintProfilingInfo(
                        << " assemble_to_decode_ms=" << assemble_to_decode_ms
                        << " decode_ms=" << decode_ms
                        << " decode_end_ms_rx=" << decode_end_ms_rx;
+
+      if (!frame) {
+        continue;
+      }
+
+      int64_t base_send_ms = -1;
+      int64_t base_recv_ms = -1;
+      auto consider_packet_for_base = [&](const PacketTimingInfo& packet) {
+        if (packet.send_time_ms >= 0 &&
+            (base_send_ms < 0 || packet.send_time_ms < base_send_ms)) {
+          base_send_ms = packet.send_time_ms;
+        }
+        const int64_t recv_ms = recv_time_ms(packet.transport_sequence_number);
+        if (recv_ms >= 0 && (base_recv_ms < 0 || recv_ms < base_recv_ms)) {
+          base_recv_ms = recv_ms;
+        }
+      };
+      for (const auto& p : frame->media_packets) {
+        consider_packet_for_base(p);
+      }
+      for (const auto& p : frame->retrans_packets) {
+        consider_packet_for_base(p);
+      }
+
+      auto print_packet = [&](const PacketTimingInfo& packet) {
+        const int64_t recv_ms = recv_time_ms(packet.transport_sequence_number);
+        const int64_t send_delta_ms =
+            (base_send_ms >= 0 && packet.send_time_ms >= 0)
+                ? (packet.send_time_ms - base_send_ms)
+                : -1;
+        const int64_t recv_delta_ms =
+            (base_recv_ms >= 0 && recv_ms >= 0) ? (recv_ms - base_recv_ms) : -1;
+        const char* kind = (packet.kind == PacketKind::kRtx) ? "RTX" : "MEDIA";
+        RTC_LOG(LS_INFO) << "P: kind=" << kind
+                         << " rtp_seq=" << packet.rtp_sequence_number
+                         << " transport_seq=" << packet.transport_sequence_number
+                         << " size=" << packet.size_bytes
+                         << " send_delta_ms="
+                         << (send_delta_ms >= 0 ? std::to_string(send_delta_ms)
+                                                : "None")
+                         << " recv_delta_ms="
+                         << (recv_delta_ms >= 0 ? std::to_string(recv_delta_ms)
+                                                : "None")
+                         << " rtx_target_seq="
+                         << (packet.rtx_target_seq.has_value()
+                                 ? std::to_string(*packet.rtx_target_seq)
+                                 : "None");
+      };
+
+      for (const auto& p : frame->media_packets) {
+        print_packet(p);
+      }
+      for (const auto& p : frame->retrans_packets) {
+        print_packet(p);
+      }
     }
   }
   RTC_LOG(LS_INFO) << "";
