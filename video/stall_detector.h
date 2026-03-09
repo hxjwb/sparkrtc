@@ -30,7 +30,7 @@ class StallDetectorObserver {
 class StallDetector {
  public:
   explicit StallDetector(StallDetectorObserver* observer,
-                         int64_t stall_threshold_us = 100000);  // 100ms
+                         int64_t stall_threshold_us = 50000);  // 100ms
   ~StallDetector();
 
   void SetObserver(StallDetectorObserver* observer);
