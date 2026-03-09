@@ -234,18 +234,47 @@ void FrameTimeWindow::PrintProfilingInfo(
       FrameTimingInfo* frame = FindFrameByTimestamp(d.rtp_timestamp);
       const int64_t decode_ms = d.decode_delay_us / 1000;
       const int64_t assemble_to_decode_ms = d.assemble_to_decode_us / 1000;
-      const int64_t decode_end_ms_rx =
-          (d.decode_end_time_us > 0) ? (d.decode_end_time_us / 1000) : -1;
+      int64_t first_send_ms = -1;
+      int64_t last_recv_ms = -1;
+      if (frame) {
+        for (const auto& packet : frame->media_packets) {
+          if (packet.send_time_ms >= 0 &&
+              (first_send_ms < 0 || packet.send_time_ms < first_send_ms)) {
+            first_send_ms = packet.send_time_ms;
+          }
+          const int64_t recv_ms = recv_time_ms(packet.transport_sequence_number);
+          if (recv_ms >= 0 && (last_recv_ms < 0 || recv_ms > last_recv_ms)) {
+            last_recv_ms = recv_ms;
+          }
+        }
+      }
+      const int64_t deliver_ms =
+          (last_recv_ms >= 0 && assemble_to_decode_ms >= 0)
+              ? (last_recv_ms + assemble_to_decode_ms)
+              : -1;
+      const int64_t decode_end_ms =
+          (deliver_ms >= 0 && decode_ms >= 0) ? (deliver_ms + decode_ms) : -1;
+      const auto gap_or_minus_one = [](int64_t start_ms, int64_t end_ms) {
+        if (start_ms < 0 || end_ms < 0) {
+          return int64_t{-1};
+        }
+        return end_ms - start_ms;
+      };
+      const int64_t encode_ms =
+          gap_or_minus_one(frame ? frame->encode_start_time_ms : -1,
+                           frame ? frame->encode_end_time_ms : -1);
+      const int64_t net_ms = gap_or_minus_one(first_send_ms, last_recv_ms);
+      const int64_t wait_ms = gap_or_minus_one(last_recv_ms, deliver_ms);
+      const int64_t e2e_ms =
+          gap_or_minus_one(frame ? frame->encode_end_time_ms : -1, decode_end_ms);
 
-      RTC_LOG(LS_INFO) << "rtp_ts=" << d.rtp_timestamp
-                       << " keyframe=" << (frame ? (frame->is_keyframe ? 1 : 0) : -1)
-                       << " frame_size_bytes=" << (frame ? frame->frame_size_bytes : 0)
-                       << " capture_ms=" << (frame ? frame->capture_time_ms : -1)
-                       << " enc_start_ms=" << (frame ? frame->encode_start_time_ms : -1)
-                       << " enc_end_ms=" << (frame ? frame->encode_end_time_ms : -1)
-                       << " assemble_to_decode_ms=" << assemble_to_decode_ms
-                       << " decode_ms=" << decode_ms
-                       << " decode_end_ms_rx=" << decode_end_ms_rx;
+      RTC_LOG(LS_INFO) << "RTP TS: " << d.rtp_timestamp
+                       << ", Frame Size: " << (frame ? frame->frame_size_bytes : 0)
+                       << ", Encode " << encode_ms
+                       << ", Net " << net_ms
+                       << ", Wait " << wait_ms
+                       << ", Decode " << decode_ms
+                       << " E2E " << e2e_ms;
 
       if (!frame) {
         continue;
@@ -278,21 +307,14 @@ void FrameTimeWindow::PrintProfilingInfo(
                 : -1;
         const int64_t recv_delta_ms =
             (base_recv_ms >= 0 && recv_ms >= 0) ? (recv_ms - base_recv_ms) : -1;
-        const char* kind = (packet.kind == PacketKind::kRtx) ? "RTX" : "MEDIA";
-        RTC_LOG(LS_INFO) << "P: kind=" << kind
-                         << " rtp_seq=" << packet.rtp_sequence_number
-                        //  << " transport_seq=" << packet.transport_sequence_number
-                         << " size=" << packet.size_bytes
-                         << " send_delta_ms="
+        RTC_LOG(LS_INFO) << " P: seq " << packet.rtp_sequence_number
+                         << ", size " << packet.size_bytes
+                         << ", send_delta "
                          << (send_delta_ms >= 0 ? std::to_string(send_delta_ms)
                                                 : "None")
-                         << " recv_delta_ms="
+                         << ", recv_delta "
                          << (recv_delta_ms >= 0 ? std::to_string(recv_delta_ms)
                                                 : "None");
-                        //  << " rtx_target_seq="
-                        //  << (packet.rtx_target_seq.has_value()
-                        //          ? std::to_string(*packet.rtx_target_seq)
-                        //          : "None");
       };
 
       for (const auto& p : frame->media_packets) {
